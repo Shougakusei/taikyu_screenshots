@@ -5,10 +5,10 @@ import torch
 
 class ReplayBuffer(object):
     def __init__(self, observation_shape, action_size, config):
-        self.config = config.parameters.dreamer.buffer
-        self.config.device = config.operation.device
+        self.config = config
+        self.device = config.operation.device
         
-        self.capacity = int(self.config.capacity)
+        self.capacity = int(self.config.parameters.dreamer.buffer.capacity)
 
         state_type = np.uint8 if len(observation_shape) < 3 else np.float32
 
@@ -37,6 +37,17 @@ class ReplayBuffer(object):
 
         self.buffer_index = (self.buffer_index + 1) % self.capacity
         self.full = self.full or self.buffer_index == 0
+        
+    def load_ofline_data(self, num_episodes):
+        
+        train_ds = EdgesDataset(config=self.config)
+        seeds = get_seed_list(config.parameters.edges_dataset.data_root)[:num_episodes]
+        
+        observations, actions, rewards, terminals = train_ds.load_episodes(seeds, num_episodes)
+        
+        dataset = MDPDataset(observations, actions, rewards, terminals, discrete_action=False)
+        observation_shape = dataset.get_observation_shape()
+        action_size =  dataset.get_action_size()
 
     def sample(self, batch_size, chunk_size):
         """
@@ -50,9 +61,9 @@ class ReplayBuffer(object):
             0, self.capacity if self.full else last_filled_index, batch_size
         ).reshape(-1, 1)
         chunk_length = np.arange(chunk_size).reshape(1, -1)
-
+        
         sample_index = (sample_index + chunk_length) % self.capacity
-
+        
         observation = torch.as_tensor(
             self.observation[sample_index], device=self.device
         ).float()

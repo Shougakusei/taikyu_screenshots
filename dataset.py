@@ -96,6 +96,10 @@ def zero_screenshot_load(zero_screenshot_path, image_size, pad, aperture_size):
     zero_screenshot = fullscreen_transform(zero_screenshot, dim=[image_size,image_size], pad=pad, aperture_size=aperture_size)
     return zero_screenshot
 
+
+def get_seed_list(path):
+    return list(map(lambda x: int(x[len('screenshots0000_'):]),os.listdir(path)))
+
 class EdgesDataset(datasets.ImageFolder):
     '''Датасет возвращает пару двухканальных изображений следующей структуры:
     [img(timestep-3), img(timestep)], [img_part(timestep-3), img_part(timestep)], timestep, (player_x, player_y), (walk_distance, jump_height), reward
@@ -116,6 +120,8 @@ class EdgesDataset(datasets.ImageFolder):
         self.config = config.parameters.edges_dataset
         
         self.config.image_size = config.environment.image_size
+        self.config.timestep_stride = config.environment.timestep_stride
+        self.config.timestep_max = config.environment.timestep_max
         
         self.zero_screenshot = zero_screenshot_load(self.config.zero_screenshot_path, self.config.image_size, self.config.pad, self.config.aperture_size)
         
@@ -131,6 +137,12 @@ class EdgesDataset(datasets.ImageFolder):
         
         timestep, reward, player_x, player_y, walk_distance, jump_height = extract_metadata(metadata_path)
         
+        if timestep < 7668:
+            timestep_next = timestep + 6
+            terminal = False
+        else:
+            terminal = True
+        
         # do your magic here
         # флаг 0 = читаем черно-белое изображение
         img1 = cv2.imread(image_path_1, 0)
@@ -142,12 +154,66 @@ class EdgesDataset(datasets.ImageFolder):
         img_part1 = transform_img(img1, dim=[self.config.image_size, self.config.image_size], zero_screenshot=self.zero_screenshot_part, part_size=self.config.part_size, player_x=player_x, player_y=player_y, aperture_size=self.config.aperture_size)
         img_part2 = transform_img(img2, dim=[self.config.image_size, self.config.image_size], zero_screenshot=self.zero_screenshot_part, part_size=self.config.part_size, player_x=player_x, player_y=player_y, aperture_size=self.config.aperture_size)
         
-        sample = cv2.merge([img_full1, img_full2])
+        sample_full = cv2.merge([img_full1, img_full2])
         sample_part = cv2.merge([img_part1, img_part2])
         
+        return (transforms.ToTensor()(sample_full), transforms.ToTensor()(sample_part), timestep, player_x, player_y), (walk_distance, jump_height), reward, terminal
+    
+    def load_timestep(self, seed, timestep):
         
+        image_path_1 = self.config.data_root + f'/screenshots0000_{seed}/{timestep}.png'
+        image_path_2 = re.sub(r'/screenshots/', r'/screenshots_add/', image_path_1)
+
+        metadata_path = image_path_2[:-3] + 'txt'
         
-        return transforms.ToTensor()(sample), transforms.ToTensor()(sample_part), timestep, (player_x, player_y), (walk_distance, jump_height), reward 
+        timestep, reward, player_x, player_y, walk_distance, jump_height = extract_metadata(metadata_path)
+
+        if timestep < 7668:
+            timestep_next = timestep + 6
+            terminal = False
+        else:
+            terminal = True
+
+        # do your magic here
+        # флаг 0 = читаем черно-белое изображение
+        img1 = cv2.imread(image_path_1, 0)
+        img2 = cv2.imread(image_path_2, 0)
+
+        img_full1 = transform_img(img1, dim=[self.config.image_size, self.config.image_size], zero_screenshot=self.zero_screenshot, aperture_size=self.config.aperture_size)
+        img_full2 = transform_img(img2, dim=[self.config.image_size, self.config.image_size], zero_screenshot=self.zero_screenshot, aperture_size=self.config.aperture_size)
+
+        img_part1 = transform_img(img1, dim=[self.config.image_size, self.config.image_size], zero_screenshot=self.zero_screenshot_part, part_size=self.config.part_size, player_x=player_x, player_y=player_y, aperture_size=self.config.aperture_size)
+        img_part2 = transform_img(img2, dim=[self.config.image_size, self.config.image_size], zero_screenshot=self.zero_screenshot_part, part_size=self.config.part_size, player_x=player_x, player_y=player_y, aperture_size=self.config.aperture_size)
+
+#         sample_full = cv2.merge([img_full1, img_full2])
+#         sample_part = cv2.merge([img_part1, img_part2])
+        
+        observation_img = np.stack([img_full1, img_full2, img_part1, img_part2])
+        
+        action = np.array([walk_distance, jump_height])
+        
+        return observation_img, action, reward, terminal
+        
+#         return (transforms.ToTensor()(sample_full), transforms.ToTensor()(sample_part), timestep, player_x, player_y), (walk_distance, jump_height), reward, terminal
+    
+    def load_episodes(self, seeds):
+        
+        if isinstance(seeds, list):
+            timestep_list = []
+            for seed in seeds:
+                timestep_list.extend([self.load_timestep(seed, timestep) for timestep in np.arange(self.config.timestep_stride, self.config.timestep_max, self.config.timestep_stride)])
+        elif isinstance(seeds, int):
+            timestep_list = [self.load_timestep(seeds, timestep) for timestep in np.arange(self.config.timestep_stride, self.config.timestep_max, self.config.timestep_stride)]
+        else:
+            raise Exception
+            
+        observation_imgs = np.stack(list(map(lambda x: x[0],timestep_list)))
+        actions = np.stack(list(map(lambda x: x[1],timestep_list)))
+        rewards = np.stack(list(map(lambda x: x[2],timestep_list)))
+        terminals = np.stack(list(map(lambda x: x[3],timestep_list)))
+        
+        return observation_imgs, actions, rewards, terminals
+    
     
 def zero_screenshot_to_device(zero_screenshot_path, image_size, pad, aperture_size, device):
 #     '''Загружаем нулевой скриншот с указанными параметрами на нужный нам девайс и детатчим градиенты'''

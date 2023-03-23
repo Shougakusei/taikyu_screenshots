@@ -49,11 +49,21 @@ class Decoder(nn.Module):
         self._conv_transes = nn.Sequential(*conv_trans_layers)
         self._conv_transes.apply(initialize_weights)
 
-    def forward(self, x):
+    def forward(self, x, y=None):
+        
+        batch_with_horizon_shape = x.shape[: -len((-1,))]
+        if not batch_with_horizon_shape:
+            batch_with_horizon_shape = (1,)
+        if y is not None:
+            x = torch.cat((x, y), -1)
+            input_shape = (x.shape[-1],)  #
+        x = x.reshape(-1, *input_shape)
         
         if self.config.num_hiddens != self.config.embedding_dim:
             x = self._posq_vq_conv(x)
         
         x = self._conv_transes(x)
+        
+        x = x.reshape(*batch_with_horizon_shape, *[self.config.image_size, self.config.image_size])
         
         return x

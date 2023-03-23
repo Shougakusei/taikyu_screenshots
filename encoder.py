@@ -30,7 +30,7 @@ class Encoder(nn.Module):
                                  stride=2))
             conv_layers.append(nn.BatchNorm2d(self.config.num_hiddens//2**(i-1)))
             conv_layers.append(activation)
-
+        
         self._convs = nn.Sequential(*conv_layers)
         self._convs.apply(initialize_weights)
         
@@ -43,9 +43,17 @@ class Encoder(nn.Module):
 
     def forward(self, x):
         
+        batch_with_horizon_shape = x.shape[: -len([self.config.image_size, self.config.image_size])]
+        if not batch_with_horizon_shape:
+            batch_with_horizon_shape = (1,)
+        x = x.reshape(-1, *[self.config.image_size, self.config.image_size])
+        x = x.unsqueeze(1)
+        
         x = self._convs(x)
         
         if self.config.num_hiddens != self.config.embedding_dim:
             x = self._pre_vq_conv(x)
+        
+        x = x.reshape(*batch_with_horizon_shape, *(-1,))
         
         return x
