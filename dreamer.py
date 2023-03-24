@@ -7,16 +7,21 @@ from rssm import RSSM, RewardModel, ContinueModel
 from encoder import Encoder
 from decoder import Decoder
 from vae import EdgeEntropyVAE
-from actor import Actor
-from critic import Critic
+# from actor import Actor
+# from critic import Critic
 
-from dreamer.utils.utils import (
-    pixel_normalization,
+from dataset import EdgesDataset, get_seed_list
+from utils import load_config
+from torch.utils.data import DataLoader
+import torch
+import numpy as np
+
+from utils import (
     compute_lambda_values,
     create_normal_dist,
     DynamicInfos,
 )
-from dreamer.utils.buffer import ReplayBuffer
+from buffer import ReplayBuffer
 
 
 class Dreamer:
@@ -36,8 +41,10 @@ class Dreamer:
         self.action_size = action_size
         self.discrete_action_bool = discrete_action_bool
         
-        self.vae_full = EdgeEntropyVAE(config, self.config.vae.true_percentage_full)
-        self.vae_part = EdgeEntropyVAE(config, self.config.vae.true_percentage_part)
+        self.encoder_full = Encoder(config).to(self.device)
+        self.encoder_part = Encoder(config).to(self.device)
+        self.decoder_full = Decoder(config).to(self.device)
+        self.decoder_part = Decoder(config).to(self.device)
         
 #         self.encoder = Encoder(observation_shape, config).to(self.device)
 #         self.decoder = Decoder(observation_shape, config).to(self.device)
@@ -45,17 +52,19 @@ class Dreamer:
         self.reward_predictor = RewardModel(config).to(self.device)
         if config.parameters.dreamer.use_continue_flag:
             self.continue_predictor = ContinueModel(config).to(self.device)
-        self.actor = Actor(discrete_action_bool, action_size, config).to(self.device)
-        self.critic = Critic(config).to(self.device)
+#         self.actor = Actor(discrete_action_bool, action_size, config).to(self.device)
+#         self.critic = Critic(config).to(self.device)
 
-        self.buffer = ReplayBuffer(observation_shape, action_size, self.device, config)
+        self.buffer = ReplayBuffer(observation_shape, action_size, config)
 
         
 
         # optimizer
         self.model_params = (
-            list(self.vae_full.parameters())
-            + list(self.vae_part.parameters())
+            list(self.encoder_full.parameters())
+            + list(self.encoder_part.parameters())
+            + list(self.decoder_full.parameters())
+            + list(self.decoder_part.parameters())
             + list(self.rssm.parameters())
             + list(self.reward_predictor.parameters())
         )
@@ -65,12 +74,12 @@ class Dreamer:
         self.model_optimizer = torch.optim.Adam(
             self.model_params, lr=self.config.model_learning_rate
         )
-        self.actor_optimizer = torch.optim.Adam(
-            self.actor.parameters(), lr=self.config.actor_learning_rate
-        )
-        self.critic_optimizer = torch.optim.Adam(
-            self.critic.parameters(), lr=self.config.critic_learning_rate
-        )
+#         self.actor_optimizer = torch.optim.Adam(
+#             self.actor.parameters(), lr=self.config.actor_learning_rate
+#         )
+#         self.critic_optimizer = torch.optim.Adam(
+#             self.critic.parameters(), lr=self.config.critic_learning_rate
+#         )
 
         self.continue_criterion = nn.BCELoss()
 
@@ -94,15 +103,28 @@ class Dreamer:
 
             self.environment_interaction(env, self.config.num_interaction_episodes)
             self.evaluate(env)
+            
+    def train_offline(self, buffer):
+        
+        self.buffer = buffer
+
+        for iteration in range(self.config.train_iterations):
+            for collect_interval in range(self.config.collect_interval):
+                data = self.buffer.sample(
+                    self.config.batch_size, self.config.batch_length
+                )
+                self.dynamic_learning(data)
 
     def evaluate(self, env):
         self.environment_interaction(env, self.config.num_evaluate, train=False)
 
     def dynamic_learning(self, data):
         prior, deterministic = self.rssm.recurrent_model_input_init(len(data.action))
-
-        data.embedded_observation = torch.cat([self.vae_full(data.observation[:,:,0,:,:]),self.vae_full(data.observation[:,:,1,:,:]),
-                                               self.vae_part(data.observation[:,:,2,:,:]),self.vae_part(data.observation[:,:,3,:,:]),-1])
+        
+        print(data.observation)
+        
+        data.embedded_observation = torch.cat([self.encoder_full(data.observation[:,:,0,:,:]),self.encoder_full(data.observation[:,:,1,:,:]),
+                                               self.encoder_part(data.observation[:,:,2,:,:]),self.encoder_part(data.observation[:,:,3,:,:])],-1)
 
         for t in range(1, self.config.batch_length):
             deterministic = self.rssm.recurrent_model(
@@ -131,13 +153,17 @@ class Dreamer:
 
     def _model_update(self, data, posterior_info):
         
-        reconstructed_observation_dist = self.decoder(
-            posterior_info.posteriors, posterior_info.deterministics
-        )
+        reconstructed_observation_dist = torch.cat([
+            self.decoder_full(posterior_info.posteriors, posterior_info.deterministics),
+            self.decoder_full(posterior_info.posteriors, posterior_info.deterministics),
+            self.decoder_part(posterior_info.posteriors, posterior_info.deterministics),
+            self.decoder_part(posterior_info.posteriors, posterior_info.deterministics),
+                                                   ],2)
         
         reconstruction_observation_loss = reconstructed_observation_dist.log_prob(
-            pixel_normalization(data.observation[:, 1:])
+            data.observation[:, 1:]
         )
+        
         if self.config.use_continue_flag:
             continue_dist = self.continue_predictor(
                 posterior_info.posteriors, posterior_info.deterministics

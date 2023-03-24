@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 
 def build_network(input_size, hidden_size, num_layers, activation, output_size):
     assert num_layers >= 2, "num_layers must be at least 2"

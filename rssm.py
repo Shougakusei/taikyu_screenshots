@@ -3,7 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Normal
 
-from utils import create_normal_dist, build_network, horizontal_forward
+from utils import create_normal_dist, horizontal_forward
+from layers import build_network
 
 
 class RSSM(nn.Module):

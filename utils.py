@@ -69,6 +69,26 @@ def create_normal_dist(
         dist = torch.distributions.Independent(dist, event_shape)
     return dist
 
+def compute_lambda_values(rewards, values, continues, horizon_length, device, lambda_):
+    """
+    rewards : (batch_size, time_step, hidden_size)
+    values : (batch_size, time_step, hidden_size)
+    continue flag will be added
+    """
+    rewards = rewards[:, 1:]
+    continues = continues[:, 1:]
+    next_values = values[:, 1:]
+    last = next_values[:, -1]
+    inputs = rewards + continues * next_values * (1 - lambda_)
+
+    outputs = []
+    # single step
+    for index in reversed(range(horizon_length - 1)):
+        last = inputs[:, index] + continues[:, index] * lambda_ * last
+        outputs.append(last)
+    returns = torch.stack(list(reversed(outputs)), dim=1).to(device)
+    return returns
+
 class DynamicInfos:
     def __init__(self, device):
         self.device = device
