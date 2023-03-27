@@ -2,17 +2,24 @@ import torch
 import torch.nn as nn
 
 from layers import ConvTranspose2dSame, initialize_weights
-from utils import power_calc
+from utils import power_calc, create_normal_dist
 
 class Decoder(nn.Module):
-    def __init__(self, config):
+    def __init__(self, observation_shape, config):
         super(Decoder, self).__init__()
         
         self.config = config.parameters.dreamer.vae
         
         self.config.image_size = config.environment.image_size
-
+        
+        self.stochastic_size = config.parameters.dreamer.stochastic_size
+        self.deterministic_size = config.parameters.dreamer.deterministic_size
+        
+        self.observation_shape = observation_shape
+        
         activation = getattr(nn, self.config.activation)()
+        
+        self.decoder_input = nn.Linear(self.deterministic_size + self.stochastic_size, self.config.num_hiddens*self.config.embedding_image_size**2)
         
         if self.config.num_hiddens != self.config.embedding_dim:
             self._posq_vq_conv = nn.Conv2d(in_channels=self.config.embedding_dim,
@@ -59,6 +66,9 @@ class Decoder(nn.Module):
             input_shape = (x.shape[-1],)  #
         x = x.reshape(-1, *input_shape)
         
+        x = self.decoder_input(x)
+        x = x.view(-1, self.config.num_hiddens, self.config.embedding_image_size, self.config.embedding_image_size)
+        
         if self.config.num_hiddens != self.config.embedding_dim:
             x = self._posq_vq_conv(x)
         
@@ -66,4 +76,6 @@ class Decoder(nn.Module):
         
         x = x.reshape(*batch_with_horizon_shape, *[self.config.image_size, self.config.image_size])
         
-        return x
+        dist = create_normal_dist(x, std=1, event_shape=len(self.observation_shape))
+        
+        return dist

@@ -42,6 +42,9 @@ def power_calc(number, base):
              
     return power
 
+def pixel_normalization(x):
+    return x / 255.0
+
 def horizontal_forward(network, x, y=None, input_shape=(-1,), output_shape=(-1,)):
     batch_with_horizon_shape = x.shape[: -len(input_shape)]
     if not batch_with_horizon_shape:

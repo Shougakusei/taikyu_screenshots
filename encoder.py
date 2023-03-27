@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from layers import Conv2dSame, initialize_weights
-from utils import power_calc
+from utils import power_calc, pixel_normalization
 
 class Encoder(nn.Module):
     def __init__(self, config):
@@ -42,6 +42,8 @@ class Encoder(nn.Module):
             self._pre_vq_conv.apply(initialize_weights)
 
     def forward(self, x):
+        
+        x = pixel_normalization(x)
         
         batch_with_horizon_shape = x.shape[: -len([self.config.image_size, self.config.image_size])]
         if not batch_with_horizon_shape:

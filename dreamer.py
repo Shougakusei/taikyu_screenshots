@@ -20,6 +20,7 @@ from utils import (
     compute_lambda_values,
     create_normal_dist,
     DynamicInfos,
+    pixel_normalization,
 )
 from buffer import ReplayBuffer
 
@@ -33,9 +34,12 @@ class Dreamer:
         writer,
         device,
         config,
+        verbose=False
     ):
         
         self.config = config.parameters.dreamer
+        
+        self.verbose = verbose
         
         self.device = device
         self.action_size = action_size
@@ -43,8 +47,8 @@ class Dreamer:
         
         self.encoder_full = Encoder(config).to(self.device)
         self.encoder_part = Encoder(config).to(self.device)
-        self.decoder_full = Decoder(config).to(self.device)
-        self.decoder_part = Decoder(config).to(self.device)
+        self.decoder_full = Decoder(observation_shape, config).to(self.device)
+        self.decoder_part = Decoder(observation_shape, config).to(self.device)
         
 #         self.encoder = Encoder(observation_shape, config).to(self.device)
 #         self.decoder = Decoder(observation_shape, config).to(self.device)
@@ -114,6 +118,8 @@ class Dreamer:
                     self.config.batch_size, self.config.batch_length
                 )
                 self.dynamic_learning(data)
+            
+                self.num_total_episode += 1
 
     def evaluate(self, env):
         self.environment_interaction(env, self.config.num_evaluate, train=False)
@@ -121,11 +127,15 @@ class Dreamer:
     def dynamic_learning(self, data):
         prior, deterministic = self.rssm.recurrent_model_input_init(len(data.action))
         
-        print(data.observation)
+        if self.verbose:
+            print('data.observation.shape: ', data.observation.shape)
         
         data.embedded_observation = torch.cat([self.encoder_full(data.observation[:,:,0,:,:]),self.encoder_full(data.observation[:,:,1,:,:]),
                                                self.encoder_part(data.observation[:,:,2,:,:]),self.encoder_part(data.observation[:,:,3,:,:])],-1)
-
+        
+        if self.verbose:
+            print('data.embedded_observation.shape: ', data.embedded_observation.shape)
+        
         for t in range(1, self.config.batch_length):
             deterministic = self.rssm.recurrent_model(
                 prior, data.action[:, t - 1], deterministic
@@ -134,7 +144,10 @@ class Dreamer:
             posterior_dist, posterior = self.rssm.representation_model(
                 data.embedded_observation[:, t], deterministic
             )
-
+        
+            if self.verbose:
+                print('deterministic.shape: ', deterministic.shape)
+        
             self.dynamic_learning_infos.append(
                 priors=prior,
                 prior_dist_means=prior_dist.mean,
@@ -146,6 +159,9 @@ class Dreamer:
             )
 
             prior = posterior
+            
+            if self.verbose:
+                print('posterior.shape: ', posterior.shape)
 
         infos = self.dynamic_learning_infos.get_stacked()
         self._model_update(data, infos)
@@ -153,16 +169,26 @@ class Dreamer:
 
     def _model_update(self, data, posterior_info):
         
-        reconstructed_observation_dist = torch.cat([
-            self.decoder_full(posterior_info.posteriors, posterior_info.deterministics),
-            self.decoder_full(posterior_info.posteriors, posterior_info.deterministics),
-            self.decoder_part(posterior_info.posteriors, posterior_info.deterministics),
-            self.decoder_part(posterior_info.posteriors, posterior_info.deterministics),
-                                                   ],2)
+        if self.verbose:
+            print('posterior_info.posteriors.shape, posterior_info.deterministics.shape: ', posterior_info.posteriors.shape, posterior_info.deterministics.shape)
         
-        reconstruction_observation_loss = reconstructed_observation_dist.log_prob(
-            data.observation[:, 1:]
-        )
+        self.posteriors_debug, self.determenistics_debug = posterior_info.posteriors, posterior_info.deterministics
+        
+        
+        
+        reconstructed_observation_dist_full_1 = self.decoder_full(posterior_info.posteriors, posterior_info.deterministics)
+        reconstructed_observation_dist_full_2 = self.decoder_full(posterior_info.posteriors, posterior_info.deterministics)
+        reconstructed_observation_dist_part_1 = self.decoder_part(posterior_info.posteriors, posterior_info.deterministics)
+        reconstructed_observation_dist_part_2 = self.decoder_part(posterior_info.posteriors, posterior_info.deterministics)
+        
+        reconstruction_observation_loss =\
+        reconstructed_observation_dist_full_1.log_prob(pixel_normalization(data.observation[:, 1:, 0])) +\
+        reconstructed_observation_dist_full_2.log_prob(pixel_normalization(data.observation[:, 1:, 1])) +\
+        reconstructed_observation_dist_part_1.log_prob(pixel_normalization(data.observation[:, 1:, 2])) +\
+        reconstructed_observation_dist_part_2.log_prob(pixel_normalization(data.observation[:, 1:, 3])) / 4 / 64 /64
+        
+        if self.verbose:
+            print('reconstruction_observation_loss: ', reconstruction_observation_loss.mean())
         
         if self.config.use_continue_flag:
             continue_dist = self.continue_predictor(
@@ -171,11 +197,17 @@ class Dreamer:
             continue_loss = self.continue_criterion(
                 continue_dist.probs, 1 - data.done[:, 1:]
             )
+            
+            if self.verbose:
+                print('continue_loss: ', continue_loss.mean())
 
         reward_dist = self.reward_predictor(
             posterior_info.posteriors, posterior_info.deterministics
         )
         reward_loss = reward_dist.log_prob(data.reward[:, 1:])
+        
+        if self.verbose:
+            print('reward_loss: ', reward_loss.mean())
 
         prior_dist = create_normal_dist(
             posterior_info.prior_dist_means,
@@ -193,6 +225,10 @@ class Dreamer:
         kl_divergence_loss = torch.max(
             torch.tensor(self.config.free_nats).to(self.device), kl_divergence_loss
         )
+        
+        if self.verbose:
+            print('kl_divergence_loss: ', kl_divergence_loss)
+        
         model_loss = (
             self.config.kl_divergence_scale * kl_divergence_loss
             - reconstruction_observation_loss.mean()
@@ -200,6 +236,9 @@ class Dreamer:
         )
         if self.config.use_continue_flag:
             model_loss += continue_loss.mean()
+            
+        if self.verbose:
+            print('model_loss: ', model_loss)
 
         self.model_optimizer.zero_grad()
         model_loss.backward()
@@ -209,3 +248,16 @@ class Dreamer:
             norm_type=self.config.grad_norm_type,
         )
         self.model_optimizer.step()
+        
+        self.writer.add_scalar(
+                            "model_loss", model_loss.item(), self.num_total_episode
+                        )
+        self.writer.add_scalar(
+                            "reconstruction_observation_loss", -reconstruction_observation_loss.mean().item(), self.num_total_episode
+                        )
+        self.writer.add_scalar(
+                            "reward_loss", -reward_loss.mean().item(), self.num_total_episode
+                        )
+        self.writer.add_scalar(
+                            "kl_divergence_loss", kl_divergence_loss.item(), self.num_total_episode
+                        )
