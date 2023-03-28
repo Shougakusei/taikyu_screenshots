@@ -5,7 +5,7 @@ from layers import ConvTranspose2dSame, initialize_weights
 from utils import power_calc, create_normal_dist
 
 class Decoder(nn.Module):
-    def __init__(self, observation_shape, config):
+    def __init__(self, observation_shape, config, probabilistic=False):
         super(Decoder, self).__init__()
         
         self.config = config.parameters.dreamer.vae
@@ -16,6 +16,8 @@ class Decoder(nn.Module):
         self.deterministic_size = config.parameters.dreamer.deterministic_size
         
         self.observation_shape = observation_shape
+        
+        self.probabilistic = probabilistic
         
         activation = getattr(nn, self.config.activation)()
         
@@ -78,4 +80,7 @@ class Decoder(nn.Module):
         
         dist = create_normal_dist(x, std=1, event_shape=len(self.observation_shape))
         
-        return dist
+        if self.probabilistic==True:
+            return dist
+        elif self.probabilistic==False:
+            return x

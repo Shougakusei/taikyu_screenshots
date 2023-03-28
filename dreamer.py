@@ -16,6 +16,8 @@ from torch.utils.data import DataLoader
 import torch
 import numpy as np
 
+from loss import EdgeDetectionEntropyLoss
+
 from utils import (
     compute_lambda_values,
     create_normal_dist,
@@ -60,9 +62,8 @@ class Dreamer:
 #         self.critic = Critic(config).to(self.device)
 
         self.buffer = ReplayBuffer(observation_shape, action_size, config)
-
         
-
+           
         # optimizer
         self.model_params = (
             list(self.encoder_full.parameters())
@@ -111,6 +112,17 @@ class Dreamer:
     def train_offline(self, buffer):
         
         self.buffer = buffer
+        
+        full_sample = self.buffer.sample(10000, 1)['observation'][:,:,:1]
+        part_sample = self.buffer.sample(10000, 1)['observation'][:,:,2:]
+        
+        self.true_percentage_full = torch.count_nonzero(full_sample) / torch.numel(full_sample)
+        self.true_percentage_part = torch.count_nonzero(part_sample) / torch.numel(part_sample)
+        
+#         self.loss_full = EdgeDetectionEntropyLoss(self.true_percentage_full)
+#         self.loss_part = EdgeDetectionEntropyLoss(self.true_percentage_part)
+        self.loss_full = nn.BCELoss()
+        self.loss_part = nn.BCELoss()
 
         for iteration in range(self.config.train_iterations):
             for collect_interval in range(self.config.collect_interval):
@@ -124,7 +136,7 @@ class Dreamer:
     def evaluate(self, env):
         self.environment_interaction(env, self.config.num_evaluate, train=False)
 
-    def dynamic_learning(self, data):
+    def dynamic_learning(self, data, inference_mode=False):
         prior, deterministic = self.rssm.recurrent_model_input_init(len(data.action))
         
         if self.verbose:
@@ -141,6 +153,7 @@ class Dreamer:
                 prior, data.action[:, t - 1], deterministic
             )
             prior_dist, prior = self.rssm.transition_model(deterministic)
+#             print(deterministic,  deterministic.shape)
             posterior_dist, posterior = self.rssm.representation_model(
                 data.embedded_observation[:, t], deterministic
             )
@@ -149,6 +162,7 @@ class Dreamer:
                 print('deterministic.shape: ', deterministic.shape)
         
             self.dynamic_learning_infos.append(
+                observation=data.observation,
                 priors=prior,
                 prior_dist_means=prior_dist.mean,
                 prior_dist_stds=prior_dist.scale,
@@ -164,100 +178,125 @@ class Dreamer:
                 print('posterior.shape: ', posterior.shape)
 
         infos = self.dynamic_learning_infos.get_stacked()
-        self._model_update(data, infos)
-        return infos.posteriors.detach(), infos.deterministics.detach()
-
-    def _model_update(self, data, posterior_info):
+        if inference_mode:
+            reconstructed_observation_full_1, reconstructed_observation_part_1 = self._model_update(data, infos, inference_mode)
+            return data.observation[:,:,0,:,:], data.observation[:,:,2,:,:], reconstructed_observation_full_1, reconstructed_observation_part_1
+        else:
+            self._model_update(data, infos, inference_mode)
+            return infos.posteriors.detach(), infos.deterministics.detach()
+    
+    
+    def _model_update(self, data, posterior_info, inference_mode):
         
         if self.verbose:
             print('posterior_info.posteriors.shape, posterior_info.deterministics.shape: ', posterior_info.posteriors.shape, posterior_info.deterministics.shape)
-        
+            
         self.posteriors_debug, self.determenistics_debug = posterior_info.posteriors, posterior_info.deterministics
         
         
+#         reconstructed_observation_dist_full_1 = self.decoder_full(posterior_info.posteriors, posterior_info.deterministics)
+#         reconstructed_observation_dist_full_2 = self.decoder_full(posterior_info.posteriors, posterior_info.deterministics)
+#         reconstructed_observation_dist_part_1 = self.decoder_part(posterior_info.posteriors, posterior_info.deterministics)
+#         reconstructed_observation_dist_part_2 = self.decoder_part(posterior_info.posteriors, posterior_info.deterministics)
+
+
+        reconstructed_observation_full_1 = self.decoder_full(posterior_info.posteriors, posterior_info.deterministics)
+#         reconstructed_observation_full_2 = self.decoder_full(posterior_info.posteriors, posterior_info.deterministics)
+        reconstructed_observation_part_1 = self.decoder_part(posterior_info.posteriors, posterior_info.deterministics)
+#         reconstructed_observation_part_2 = self.decoder_part(posterior_info.posteriors, posterior_info.deterministics)
+
+        if inference_mode:
         
-        reconstructed_observation_dist_full_1 = self.decoder_full(posterior_info.posteriors, posterior_info.deterministics)
-        reconstructed_observation_dist_full_2 = self.decoder_full(posterior_info.posteriors, posterior_info.deterministics)
-        reconstructed_observation_dist_part_1 = self.decoder_part(posterior_info.posteriors, posterior_info.deterministics)
-        reconstructed_observation_dist_part_2 = self.decoder_part(posterior_info.posteriors, posterior_info.deterministics)
-        
-        reconstruction_observation_loss =\
-        reconstructed_observation_dist_full_1.log_prob(pixel_normalization(data.observation[:, 1:, 0])) +\
-        reconstructed_observation_dist_full_2.log_prob(pixel_normalization(data.observation[:, 1:, 1])) +\
-        reconstructed_observation_dist_part_1.log_prob(pixel_normalization(data.observation[:, 1:, 2])) +\
-        reconstructed_observation_dist_part_2.log_prob(pixel_normalization(data.observation[:, 1:, 3])) / 4 / 64 /64
-        
-        if self.verbose:
-            print('reconstruction_observation_loss: ', reconstruction_observation_loss.mean())
-        
-        if self.config.use_continue_flag:
-            continue_dist = self.continue_predictor(
+            return reconstructed_observation_full_1, reconstructed_observation_part_1
+
+        if inference_mode == False:
+            
+            print(self.loss_full(reconstructed_observation_full_1, pixel_normalization(data.observation[:, 1:, 0])).detach().item(), self.loss_part(reconstructed_observation_part_1, pixel_normalization(data.observation[:, 1:, 2])).detach().item())
+            
+            reconstruction_observation_loss = -(\
+            self.loss_full(reconstructed_observation_full_1, pixel_normalization(data.observation[:, 1:, 0])) +\
+#             self.loss_full(reconstructed_observation_full_2, pixel_normalization(data.observation[:, 1:, 1])) +\
+            self.loss_part(reconstructed_observation_part_1, pixel_normalization(data.observation[:, 1:, 2])) )#+\
+#             self.loss_part(reconstructed_observation_part_2, pixel_normalization(data.observation[:, 1:, 3])) / 4)
+            
+            
+#             reconstruction_observation_loss =\
+#             reconstructed_observation_dist_full_1.log_prob(pixel_normalization(data.observation[:, 1:, 0])) +\
+#             reconstructed_observation_dist_full_2.log_prob(pixel_normalization(data.observation[:, 1:, 1])) +\
+#             reconstructed_observation_dist_part_1.log_prob(pixel_normalization(data.observation[:, 1:, 2])) +\
+#             reconstructed_observation_dist_part_2.log_prob(pixel_normalization(data.observation[:, 1:, 3])) / 4 / 64 /64
+
+            if self.verbose:
+                print('reconstruction_observation_loss: ', reconstruction_observation_loss.mean())
+
+            if self.config.use_continue_flag:
+                continue_dist = self.continue_predictor(
+                    posterior_info.posteriors, posterior_info.deterministics
+                )
+                continue_loss = self.continue_criterion(
+                    continue_dist.probs, 1 - data.done[:, 1:]
+                )
+
+                if self.verbose:
+                    print('continue_loss: ', continue_loss.mean())
+
+            reward_dist = self.reward_predictor(
                 posterior_info.posteriors, posterior_info.deterministics
             )
-            continue_loss = self.continue_criterion(
-                continue_dist.probs, 1 - data.done[:, 1:]
-            )
-            
+            reward_loss = reward_dist.log_prob(data.reward[:, 1:])
+
             if self.verbose:
-                print('continue_loss: ', continue_loss.mean())
+                print('reward_loss: ', reward_loss.mean())
 
-        reward_dist = self.reward_predictor(
-            posterior_info.posteriors, posterior_info.deterministics
-        )
-        reward_loss = reward_dist.log_prob(data.reward[:, 1:])
-        
-        if self.verbose:
-            print('reward_loss: ', reward_loss.mean())
+            prior_dist = create_normal_dist(
+                posterior_info.prior_dist_means,
+                posterior_info.prior_dist_stds,
+                event_shape=1,
+            )
+            posterior_dist = create_normal_dist(
+                posterior_info.posterior_dist_means,
+                posterior_info.posterior_dist_stds,
+                event_shape=1,
+            )
+            kl_divergence_loss = torch.mean(
+                torch.distributions.kl.kl_divergence(posterior_dist, prior_dist)
+            )
+            kl_divergence_loss = torch.max(
+                torch.tensor(self.config.free_nats).to(self.device), kl_divergence_loss
+            )
 
-        prior_dist = create_normal_dist(
-            posterior_info.prior_dist_means,
-            posterior_info.prior_dist_stds,
-            event_shape=1,
-        )
-        posterior_dist = create_normal_dist(
-            posterior_info.posterior_dist_means,
-            posterior_info.posterior_dist_stds,
-            event_shape=1,
-        )
-        kl_divergence_loss = torch.mean(
-            torch.distributions.kl.kl_divergence(posterior_dist, prior_dist)
-        )
-        kl_divergence_loss = torch.max(
-            torch.tensor(self.config.free_nats).to(self.device), kl_divergence_loss
-        )
-        
-        if self.verbose:
-            print('kl_divergence_loss: ', kl_divergence_loss)
-        
-        model_loss = (
-            self.config.kl_divergence_scale * kl_divergence_loss
-            - reconstruction_observation_loss.mean()
-            - reward_loss.mean()
-        )
-        if self.config.use_continue_flag:
-            model_loss += continue_loss.mean()
-            
-        if self.verbose:
-            print('model_loss: ', model_loss)
+            if self.verbose:
+                print('kl_divergence_loss: ', kl_divergence_loss)
 
-        self.model_optimizer.zero_grad()
-        model_loss.backward()
-        nn.utils.clip_grad_norm_(
-            self.model_params,
-            self.config.clip_grad,
-            norm_type=self.config.grad_norm_type,
-        )
-        self.model_optimizer.step()
-        
-        self.writer.add_scalar(
-                            "model_loss", model_loss.item(), self.num_total_episode
-                        )
-        self.writer.add_scalar(
-                            "reconstruction_observation_loss", -reconstruction_observation_loss.mean().item(), self.num_total_episode
-                        )
-        self.writer.add_scalar(
-                            "reward_loss", -reward_loss.mean().item(), self.num_total_episode
-                        )
-        self.writer.add_scalar(
-                            "kl_divergence_loss", kl_divergence_loss.item(), self.num_total_episode
-                        )
+            model_loss = (
+                self.config.kl_divergence_scale * kl_divergence_loss
+                - reconstruction_observation_loss.mean()
+                - reward_loss.mean()
+            )
+            if self.config.use_continue_flag:
+                model_loss += continue_loss.mean()
+
+            if self.verbose:
+                print('model_loss: ', model_loss)
+
+            self.model_optimizer.zero_grad()
+            model_loss.backward()
+            nn.utils.clip_grad_norm_(
+                self.model_params,
+                self.config.clip_grad,
+                norm_type=self.config.grad_norm_type,
+            )
+            self.model_optimizer.step()
+
+            self.writer.add_scalar(
+                                "model_loss", model_loss.item(), self.num_total_episode
+                            )
+            self.writer.add_scalar(
+                                "reconstruction_observation_loss", -reconstruction_observation_loss.mean().item(), self.num_total_episode
+                            )
+            self.writer.add_scalar(
+                                "reward_loss", -reward_loss.mean().item(), self.num_total_episode
+                            )
+            self.writer.add_scalar(
+                                "kl_divergence_loss", self.config.kl_divergence_scale * kl_divergence_loss.item(), self.num_total_episode
+            )        

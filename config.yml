@@ -27,14 +27,14 @@ parameters :
     dreamer :
         train_iterations : 10000
         horizon_length : 15
-        batch_size : 35
+        batch_size : 25
         batch_length : 45
         collect_interval : 100
         num_interaction_episodes : 1
         seed_episodes : 5
         num_evaluate : 3
         
-        kl_divergence_scale : 1
+        kl_divergence_scale : 0.03
         free_nats : 3
         discount : 0.99
         lambda_ : 0.95
