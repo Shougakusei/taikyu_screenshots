@@ -20,7 +20,7 @@ parameters :
         zero_screenshot_path : Sadistic_Music_Factory_screenshots/Sadistic_Music_Factory/Zero_screenshot.png
         zero_screenshot_part_path : Sadistic_Music_Factory_screenshots/Sadistic_Music_Factory/Zero_screenshot_part.png
         pad : 32
-        aperture_size : 7 
+        aperture_size : 5 
         part_size : 100
         
         

@@ -179,8 +179,8 @@ class Dreamer:
 
         infos = self.dynamic_learning_infos.get_stacked()
         if inference_mode:
-            reconstructed_observation_full_1, reconstructed_observation_part_1 = self._model_update(data, infos, inference_mode)
-            return data.observation[:,:,0,:,:], data.observation[:,:,2,:,:], reconstructed_observation_full_1, reconstructed_observation_part_1
+            reconstructed_observation_full_1, reconstructed_observation_part_1, reward_dist = self._model_update(data, infos, inference_mode)
+            return data.observation[:,:,0,:,:], data.observation[:,:,2,:,:], reconstructed_observation_full_1, reconstructed_observation_part_1, reward_dist
         else:
             self._model_update(data, infos, inference_mode)
             return infos.posteriors.detach(), infos.deterministics.detach()
@@ -207,7 +207,11 @@ class Dreamer:
 
         if inference_mode:
         
-            return reconstructed_observation_full_1, reconstructed_observation_part_1
+            reward_dist = self.reward_predictor(
+                posterior_info.posteriors, posterior_info.deterministics
+            )
+        
+            return reconstructed_observation_full_1, reconstructed_observation_part_1, reward_dist
 
         if inference_mode == False:
             
