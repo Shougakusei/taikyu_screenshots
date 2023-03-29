@@ -34,7 +34,7 @@ parameters :
         seed_episodes : 5
         num_evaluate : 3
         
-        kl_divergence_scale : 0.03
+        kl_divergence_scale : 0.2
         free_nats : 3
         discount : 0.99
         lambda_ : 0.95
