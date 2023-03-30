@@ -53,8 +53,9 @@ class Dreamer:
         self.decoder_full = Decoder(observation_shape, config).to(self.device)
         self.decoder_part = Decoder(observation_shape, config).to(self.device)
         
-#         self.encoder = Encoder(observation_shape, config).to(self.device)
-#         self.decoder = Decoder(observation_shape, config).to(self.device)
+        self.loss_full = nn.BCELoss()
+        self.loss_part = nn.BCELoss()
+        
         self.rssm = RSSM(action_size, config).to(self.device)
         self.reward_predictor = RewardModel(config).to(self.device)
         if config.parameters.dreamer.use_continue_flag:
@@ -93,7 +94,20 @@ class Dreamer:
 
         self.writer = writer
         self.num_total_episode = 0
-    
+
+    def load_buffer(self, buffer):
+        
+        self.buffer = buffer
+        
+        full_sample = self.buffer.sample(10000, 1)['observation'][:,:,:1]
+        part_sample = self.buffer.sample(10000, 1)['observation'][:,:,2:]
+        
+        self.true_percentage_full = torch.count_nonzero(full_sample) / torch.numel(full_sample)
+        self.true_percentage_part = torch.count_nonzero(part_sample) / torch.numel(part_sample)
+        
+        self.loss_full = EdgeDetectionEntropyLoss(self.true_percentage_full)
+        self.loss_part = EdgeDetectionEntropyLoss(self.true_percentage_part)
+        
     def train(self, env):
         if len(self.buffer) < 1:
             self.environment_interaction(env, self.config.seed_episodes)
@@ -168,6 +182,10 @@ class Dreamer:
 
         infos = self.dynamic_learning_infos.get_stacked()
         
+        self.posteriors_debug, self.determenistics_debug = infos.posteriors, infos.deterministics
+        
+        self.observations_debug = data.observation
+        
         self._model_update(data, infos, inference_mode)
         
         if inference_mode:
@@ -181,8 +199,6 @@ class Dreamer:
         
         if self.verbose:
             print('posterior_info.posteriors.shape, posterior_info.deterministics.shape: ', posterior_info.posteriors.shape, posterior_info.deterministics.shape)
-            
-        self.posteriors_debug, self.determenistics_debug = posterior_info.posteriors, posterior_info.deterministics
         
         
 #         reconstructed_observation_dist_full_1 = self.decoder_full(posterior_info.posteriors, posterior_info.deterministics)
@@ -301,36 +317,6 @@ class Dreamer:
             )        
             
             print(reconstructed_observation_full_loss.detach().item(), reconstructed_observation_part_loss.detach().item(), self.config.kl_divergence_scale * kl_divergence_loss.detach().item())
-
-    def trajectories_rollout(self, buffer):
-        """
-        #TODO : last posterior truncation(last can be last step)
-        posterior shape : (batch, timestep, stochastic)
-        """
-        
-        self.load_buffer(buffer)
-        
-        data = self.buffer.sample(
-                    self.config.batch_size, self.config.batch_length
-                )
-        
-        states, deterministics = self.dynamic_learning(data)
-        
-        actions = data['action']
-        
-        state = states.reshape(-1, self.config.stochastic_size)
-        deterministic = deterministics.reshape(-1, self.config.deterministic_size)
-        action = actions.reshape(-1,self.action_size)
-        
-        # continue_predictor reinit
-        for t in range(self.config.horizon_length):
-            deterministic = self.rssm.recurrent_model(state, action, deterministic)
-            _, state = self.rssm.transition_model(deterministic)
-            self.behavior_learning_infos.append(
-                priors=state, deterministics=deterministic
-            )
-        
-        return 0
             
     def save_params(self, folder_path):
                   
@@ -360,18 +346,3 @@ class Dreamer:
             self.continue_predictor = torch.load(f'{folder_path}/continue_predictor.pth')
         self.actor = torch.load(f'{folder_path}/actor.pth')
         self.critic = torch.load(f'{folder_path}/critic.pth')
-        
-    def load_buffer(self, buffer):
-        
-        self.buffer = buffer
-        
-        full_sample = self.buffer.sample(10000, 1)['observation'][:,:,:1]
-        part_sample = self.buffer.sample(10000, 1)['observation'][:,:,2:]
-        
-        self.true_percentage_full = torch.count_nonzero(full_sample) / torch.numel(full_sample)
-        self.true_percentage_part = torch.count_nonzero(part_sample) / torch.numel(part_sample)
-        
-#         self.loss_full = EdgeDetectionEntropyLoss(self.true_percentage_full)
-#         self.loss_part = EdgeDetectionEntropyLoss(self.true_percentage_part)
-        self.loss_full = nn.BCELoss()
-        self.loss_part = nn.BCELoss()
