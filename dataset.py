@@ -109,35 +109,43 @@ def get_seed_list(path):
 
 def load_image_obs(image_path, zero_screenshot, zero_screenshot_part, config):
     
-    image_path_1 = image_path
-    image_path_2 = re.sub(r'/screenshots/', r'/screenshots_add/', image_path_1)
-
-    metadata_path = image_path_2[:-3] + 'txt'
-
+    # Добавляем в список пути к доп скриншотам начиная с самого раннего
+    image_pathes= []
+    image_path_add = re.sub(r'/screenshots/', r'/screenshots_add/', image_path)
+    for i in range(config.environment.add_screen_count):
+        image_pathes.append(image_path_add[:-4] + f'_{i}' + image_path_add[-4:]) 
+        
+    # Добавляем основной скриншот
+    image_pathes.append(image_path)
+    
+    # Путь к метаданным
+    metadata_path = image_path_add[:-3] + 'txt'
     timestep, reward, player_x, player_y, walk_distance, jump_height = extract_metadata(metadata_path)
-
+    
+    # Рассчитываем окончание эпизода
     if timestep < 7668:
         timestep_next = timestep + 6
         terminal = False
     else:
         terminal = True
 
-    # do your magic here
+        
     # флаг 0 = читаем черно-белое изображение
-    img1 = cv2.imread(image_path_1, 0)
-    img2 = cv2.imread(image_path_2, 0)
+    imgs = [cv2.imread(image_path, 0) for image_path in image_pathes]
+    
+    # Трансформируем и получаем готовые полные изображения
+    imgs_full = [transform_img(img, dim=[config.environment.image_size, config.environment.image_size], zero_screenshot=zero_screenshot, aperture_size=config.parameters.edges_dataset.aperture_size)
+                for img in imgs]
 
-    img_full1 = transform_img(img1, dim=[config.environment.image_size, config.environment.image_size], zero_screenshot=zero_screenshot, aperture_size=config.parameters.edges_dataset.aperture_size)
-    img_full2 = transform_img(img2, dim=[config.environment.image_size, config.environment.image_size], zero_screenshot=zero_screenshot, aperture_size=config.parameters.edges_dataset.aperture_size)
-
-    img_part1 = transform_img(img1, dim=[config.environment.image_size, config.environment.image_size], zero_screenshot=zero_screenshot_part, part_size=config.parameters.edges_dataset.part_size, 
+    # Получаем частичные изображения
+    imgs_part = [transform_img(img, dim=[config.environment.image_size, config.environment.image_size], zero_screenshot=zero_screenshot_part, part_size=config.parameters.edges_dataset.part_size, 
 player_x=config.parameters.edges_dataset.zero_screenshot_player_x, player_y=config.parameters.edges_dataset.zero_screenshot_player_y, aperture_size=config.parameters.edges_dataset.aperture_size)
-    img_part2 = transform_img(img2, dim=[config.environment.image_size, config.environment.image_size], zero_screenshot=zero_screenshot_part, part_size=config.parameters.edges_dataset.part_size, player_x=config.parameters.edges_dataset.zero_screenshot_player_x, player_y=config.parameters.edges_dataset.zero_screenshot_player_y, aperture_size=config.parameters.edges_dataset.aperture_size)
+                for img in imgs]
 
 #         sample_full = cv2.merge([img_full1, img_full2])
 #         sample_part = cv2.merge([img_part1, img_part2])
 
-    observation_img = np.stack([img_full1, img_full2, img_part1, img_part2])
+    observation_img = np.stack([*imgs_full, *imgs_part])
 
     action = np.array([walk_distance, jump_height])
 

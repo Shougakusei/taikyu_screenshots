@@ -12,6 +12,7 @@ environment :
     image_size : 64
     timestep_stride : 6
     timestep_max : 7668
+    add_screen_count : 1
 
 parameters :
 
@@ -19,6 +20,8 @@ parameters :
         data_root : SMF_screenshots_enriched/screenshots
         zero_screenshot_path : Sadistic_Music_Factory_screenshots/Sadistic_Music_Factory/Zero_screenshot.png
         zero_screenshot_part_path : Sadistic_Music_Factory_screenshots/Sadistic_Music_Factory/Zero_screenshot_part.png
+        zero_screenshot_player_x : 75
+        zero_screenshot_player_y : 546
         pad : 32
         aperture_size : 5 
         part_size : 100
