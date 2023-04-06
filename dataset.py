@@ -28,9 +28,9 @@ def extract_metadata(fpath):
     info_splited = info.split('_')
     
     timestep = int(info_splited[0])
-    reward = int(info_splited[1])
-    player_x = int(info_splited[2])
-    player_y = int(info_splited[3])
+    reward = float(info_splited[1])
+    player_x = float(info_splited[2])
+    player_y = float(info_splited[3])
     
     
     movements = info_splited[4].split(';')[:-1]
@@ -96,11 +96,18 @@ def zero_screenshot_load(zero_screenshot_path, image_size, pad, aperture_size):
     zero_screenshot = fullscreen_transform(zero_screenshot, dim=[image_size,image_size], pad=pad, aperture_size=aperture_size)
     return zero_screenshot
 
+def zero_screenshot_part_load(zero_screenshot_path, image_size, part_size, player_x, player_y, pad, aperture_size):
+    '''Загружаем и трансформируем нулевой скриншот с указанными параметрами'''
+    zero_screenshot = cv2.imread(zero_screenshot_path, 0)
+    zero_screenshot = take_screen_part(zero_screenshot, player_x, player_y, part_size, part_size, part_size)
+    zero_screenshot = partscreen_transform(zero_screenshot, dim=[image_size,image_size], aperture_size=aperture_size)
+    return zero_screenshot
+
 
 def get_seed_list(path):
     return list(map(lambda x: int(x[len('screenshots0000_'):]),os.listdir(path)))
 
-def load_image_obs(image_path):
+def load_image_obs(image_path, zero_screenshot, zero_screenshot_part, config):
     
     image_path_1 = image_path
     image_path_2 = re.sub(r'/screenshots/', r'/screenshots_add/', image_path_1)
@@ -120,11 +127,12 @@ def load_image_obs(image_path):
     img1 = cv2.imread(image_path_1, 0)
     img2 = cv2.imread(image_path_2, 0)
 
-    img_full1 = transform_img(img1, dim=[self.config.image_size, self.config.image_size], zero_screenshot=self.zero_screenshot, aperture_size=self.config.aperture_size)
-    img_full2 = transform_img(img2, dim=[self.config.image_size, self.config.image_size], zero_screenshot=self.zero_screenshot, aperture_size=self.config.aperture_size)
+    img_full1 = transform_img(img1, dim=[config.environment.image_size, config.environment.image_size], zero_screenshot=zero_screenshot, aperture_size=config.parameters.edges_dataset.aperture_size)
+    img_full2 = transform_img(img2, dim=[config.environment.image_size, config.environment.image_size], zero_screenshot=zero_screenshot, aperture_size=config.parameters.edges_dataset.aperture_size)
 
-    img_part1 = transform_img(img1, dim=[self.config.image_size, self.config.image_size], zero_screenshot=self.zero_screenshot_part, part_size=self.config.part_size, player_x=player_x, player_y=player_y, aperture_size=self.config.aperture_size)
-    img_part2 = transform_img(img2, dim=[self.config.image_size, self.config.image_size], zero_screenshot=self.zero_screenshot_part, part_size=self.config.part_size, player_x=player_x, player_y=player_y, aperture_size=self.config.aperture_size)
+    img_part1 = transform_img(img1, dim=[config.environment.image_size, config.environment.image_size], zero_screenshot=zero_screenshot_part, part_size=config.parameters.edges_dataset.part_size, 
+player_x=config.parameters.edges_dataset.zero_screenshot_player_x, player_y=config.parameters.edges_dataset.zero_screenshot_player_y, aperture_size=config.parameters.edges_dataset.aperture_size)
+    img_part2 = transform_img(img2, dim=[config.environment.image_size, config.environment.image_size], zero_screenshot=zero_screenshot_part, part_size=config.parameters.edges_dataset.part_size, player_x=config.parameters.edges_dataset.zero_screenshot_player_x, player_y=config.parameters.edges_dataset.zero_screenshot_player_y, aperture_size=config.parameters.edges_dataset.aperture_size)
 
 #         sample_full = cv2.merge([img_full1, img_full2])
 #         sample_part = cv2.merge([img_part1, img_part2])
