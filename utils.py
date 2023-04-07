@@ -45,7 +45,7 @@ def power_calc(number, base):
 def pixel_normalization(x):
     return x / 255.0
 
-def horizontal_forward(network, x, y=None, input_shape=(-1,), output_shape=(-1,)):
+def horizontal_forward(network, x: torch.Tensor, y=None: torch.Tensor, input_shape=(-1,), output_shape=(-1,)) -> torch.Tensor:
     batch_with_horizon_shape = x.shape[: -len(input_shape)]
     if not batch_with_horizon_shape:
         batch_with_horizon_shape = (1,)
@@ -58,9 +58,7 @@ def horizontal_forward(network, x, y=None, input_shape=(-1,), output_shape=(-1,)
     x = x.reshape(*batch_with_horizon_shape, *output_shape)
     return x
 
-def create_normal_dist(
-    x, std=None, mean_scale=1, init_std=0, min_std=0.1, event_shape=None
-):
+def create_normal_dist(x, std=None, mean_scale=1, init_std=0, min_std=0.1, event_shape=None):
     if std == None:
         mean, std = torch.chunk(x, 2, -1)
         mean = mean_scale * torch.tanh(mean / mean_scale)

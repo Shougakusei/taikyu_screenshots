@@ -13,6 +13,10 @@ environment :
     timestep_stride : 6
     timestep_max : 7668
     add_screen_count : 1
+directories:
+    root_folder : D:/fangames/I wanna be the Palladium ver1.0/Sadistic_Music_Factory/,
+    exe_folder : D:/fangames/I wanna be the Palladium ver1.0/
+    exe : test.exe
 
 parameters :
 
