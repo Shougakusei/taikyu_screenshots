@@ -11,6 +11,7 @@ class Encoder(nn.Module):
         self.config = config.parameters.dreamer.vae
         
         self.config.image_size = config.environment.image_size
+        self.config.in_channels = config.environment.add_screen_count + 1
 
         activation = getattr(nn, self.config.activation)()
         

@@ -11,6 +11,7 @@ class Decoder(nn.Module):
         self.config = config.parameters.dreamer.vae
         
         self.config.image_size = config.environment.image_size
+        self.config.in_channels = config.environment.add_screen_count + 1
         
         self.stochastic_size = config.parameters.dreamer.stochastic_size
         self.deterministic_size = config.parameters.dreamer.deterministic_size

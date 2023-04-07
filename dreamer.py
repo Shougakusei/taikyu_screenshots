@@ -41,6 +41,7 @@ class Dreamer:
     ):
         
         self.config = config.parameters.dreamer
+        self.config.in_channels = config.environment.add_screen_count + 1
         
         self.verbose = verbose
         
@@ -97,14 +98,16 @@ class Dreamer:
 
     def load_buffer(self, buffer):
         
+        # Загружаем буффер в алгоритм
         self.buffer = buffer
         
+        # Считаем сердний процент заполненных ячеек на изображении 
         full_sample = self.buffer.sample(10000, 1)['observation'][:,:,:1]
         part_sample = self.buffer.sample(10000, 1)['observation'][:,:,2:]
-        
         self.true_percentage_full = torch.count_nonzero(full_sample) / torch.numel(full_sample)
         self.true_percentage_part = torch.count_nonzero(part_sample) / torch.numel(part_sample)
         
+        # Задаем лоссы согласно процентам
         self.loss_full = EdgeDetectionEntropyLoss(self.true_percentage_full)
         self.loss_part = EdgeDetectionEntropyLoss(self.true_percentage_part)
         
@@ -145,8 +148,8 @@ class Dreamer:
         if self.verbose:
             print('data.observation.shape: ', data.observation.shape)
         
-        data.embedded_observation = torch.cat([self.encoder_full(data.observation[:,:,0,:,:]),self.encoder_full(data.observation[:,:,1,:,:]),
-                                               self.encoder_part(data.observation[:,:,2,:,:]),self.encoder_part(data.observation[:,:,3,:,:])],-1)
+        # Кодируем частичные и полные наблюдения соответствующими энкодерами, затем скрепляем
+        data.embedded_observation = torch.cat([self.encoder_full(data.observation[:,:,:self.config.in_channels,:,:]) self.encoder_part(data.observation[:,:,self.config.in_channels:,:,:])],-1)
         
         if self.verbose:
             print('data.embedded_observation.shape: ', data.embedded_observation.shape)
