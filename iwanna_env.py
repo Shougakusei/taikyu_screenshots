@@ -11,7 +11,7 @@ import time
 import shutil
 import yaml
 from attrdict import AttrDict
-from util import find_file, load_config
+from utils import find_file, load_config
 from dataset import load_image_obs, zero_screenshot_load, zero_screenshot_part_load
 
 def wait_path_exists(path, sleep_time=0.25, peridos_to_wait=40):
@@ -27,7 +27,12 @@ def start_iwanna(folder, exe):
     return subprocess.Popen([exe])
 
 def close_iwanna(process):
-    os.kill(process.pid, signal.SIGTERM)
+    try:
+        os.kill(process.pid, signal.SIGTERM)
+    except PermissionError:
+        print('Отказано в доступе при попытке остановки процесса')
+    except OSError:
+        print('Процесс не существует')
     
 def actions_to_controls(walk_length, jump_height):
     
@@ -113,7 +118,7 @@ def write_start_conditions(file_path, seed, timeline_start, player_x_start, play
         file.write(f'{seed}\n')
         file.write(f'{timeline_start}\n')
         file.write(f'{player_x_start}\n')
-        file.write(f'{player_y_start}\n')
+        file.write(f'{player_y_start}\n')  
         
 class PythonFlg():
     
@@ -139,34 +144,35 @@ class PythonFlg():
             os.remove(self.flg_path)
             self.raised = 0
             
- class IwannaEnv(gym.Env):
+class IwannaEnv(gym.Env):
     
-    def __init__(self, root_folder, exe_folder, exe, config, seed=None, timeline_start=None, player_x_start=None, player_y_start=None):
+    def __init__(self, config, seed=None, timeline_start=None, player_x_start=None, player_y_start=None):
         
         
         self.config = config
-        self.flg = PythonFlg(root_folder + 'Realtime/python_flg.txt')
+        self.flg = PythonFlg(self.config.directories.root_folder + 'Realtime/python_flg.txt')
         
         super(IwannaEnv, self).__init__()
         
         # каналы изображения - [доп скрин N full, ..., доп скрин 0 full, основной скрин full,
         #                       доп скрин N part, ..., доп скрин 0 part, основной скрин part]
-        self.observation_space = spaces.Box(low=0, high=1,
-                                            shape=((config.environment.add_screen_count + 1) * 2, 
+        self.observation_space = spaces.Box(low=0, high=255,
+                                            shape=((self.config.environment.add_screen_count + 1) * 2, 
                                                    self.config.environment.image_size, 
                                                    self.config.environment.image_size), 
-                                            dtype=np.float32)
+                                            dtype=np.uint8)
         
         # Действия формата - (ходьба, где положительное значение - вправо, отрицательное - влево;
         #                     прыжок, где 0 - не прыгаем, 1 - прыгаем и отпускаем в первый же кадр,
-        #                     ... 6 - прыгаем, и отпускаем на шестой кадр)
+        #                     ... 6 - прыгаем, и отпускаем на шестой кадр,
+        #                         7 - не отпускаем кнопку прыжка)
         #
         # При записи действий в txt идет округление до ближайшего десятичного знака
-        self.action_space = spaces.Box(low=np.array([-config.environment.timestep_stride, config.environment.timestep_stride]), high=np.array([0, config.environment.timestep_stride]), dtype=np.float32)
+        self.action_space = spaces.Box(low=np.array([-self.config.environment.timestep_stride, 0]), high=np.array([self.config.environment.timestep_stride, self.config.environment.timestep_stride + 1]), dtype=np.float32)
         
-        self.exe_folder = config.directories.exe_folder
-        self.exe = config.directories.exe
-        self.root_folder = config.directories.root_folder
+        self.exe_folder = self.config.directories.exe_folder
+        self.exe = self.config.directories.exe
+        self.root_folder = self.config.directories.root_folder
         self.screenshot_folder = self.root_folder + 'Realtime/screenshots/'
         self.screenshot_add_folder = self.root_folder + 'Realtime/screenshots_add/'
         self.controls_folder = self.root_folder + 'Realtime/controls/'
@@ -194,7 +200,7 @@ class PythonFlg():
         # Текстовый вид стартовой позиции таймлайна с лидирующими нулями для записи в названиях файлов
         self.timeline_start_str = (4 - len(str(self.timeline_start))) * '0' + str(self.timeline_start)
 
-        self.timestep = config.environment.timestep_stride
+        self.timestep = self.config.environment.timestep_stride
         
         self.process = None
         
@@ -207,7 +213,7 @@ class PythonFlg():
             close_iwanna(self.process)
         
         # Обнуляем текущее время энвайронмента
-        self.timestep = config.environment.timestep_stride
+        self.timestep = self.config.environment.timestep_stride
         
         self.episode_screenshots_folder = self.screenshot_folder + f'screenshots{self.timeline_start_str}_{self.seed}/'
         
@@ -269,7 +275,7 @@ class PythonFlg():
         # Формат словаря нужен для корректной обработки среды существующими алгоритмами
         info = {}
         
-        self.timestep += config.environment.timestep_stride
+        self.timestep += self.config.environment.timestep_stride
         
         return observation_img, reward, terminal, info
     
@@ -279,14 +285,8 @@ class PythonFlg():
     
     def close(self):
         
-        try:
-            close_iwanna(self.process)
-        except PermissionError:
-            print('Отказано в доступе при попытке остановки процесса')
-        except OSError:
-            print('Процесс не существует')
-        
         self.flg.lower_flg()
+        close_iwanna(self.process)
     
     def __del__(self):
         

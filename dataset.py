@@ -34,32 +34,32 @@ def extract_metadata(fpath):
     player_x = float(info_splited[2])
     player_y = float(info_splited[3])
     
-    movements = info_splited[4].split(';')[:-1]
+#     movements = info_splited[4].split(';')[:-1]
     
     walk_distance = jump_height = jump_true = 0
     
 #     Рассчитываем действие из последовательности мувментов
-    for i in range(len(movements)):
+#     for i in range(len(movements)):
         
-        movement_list = [int(x) for x in list(movements[i])]
+#         movement_list = [int(x) for x in list(movements[i])]
         
-        if movement_list[0] == 1:
-            walk_distance -= 1
+#         if movement_list[0] == 1:
+#             walk_distance -= 1
             
-        if movement_list[1] == 1:
-            walk_distance += 1
+#         if movement_list[1] == 1:
+#             walk_distance += 1
         
-        if movement_list[2] == 1:
-            jump_true = 1
+#         if movement_list[2] == 1:
+#             jump_true = 1
         
-        # Если jumpt_true == 0, то не делаем ничего
-        if (movement_list[3] == 0) and (jump_true == 1):
-            jump_height += 1
-        elif (movement_list[3] == 1) and (jump_true == 1):
-            jump_height += 1
-            jump_true = 0
+#         # Если jumpt_true == 0, то не делаем ничего
+#         if (movement_list[3] == 0) and (jump_true == 1):
+#             jump_height += 1
+#         elif (movement_list[3] == 1) and (jump_true == 1):
+#             jump_height += 1
+#             jump_true = 0
         
-    return timestep, reward, player_x, player_y, walk_distance, jump_height
+    return timestep, reward, player_x, player_y, 0, 0
 
 def take_screen_part(img, player_x, player_y, width, height, pad):
     
@@ -104,7 +104,7 @@ def transform_multiproc(img, zero_screenshot, zero_screenshot_part, config):
     return transform_img(img, 
                dim=[config.environment.image_size, config.environment.image_size], 
                zero_screenshot=zero_screenshot, 
-               aperture_size=config.parameters.edges_dataset.aperture_size),
+               aperture_size=config.parameters.edges_dataset.aperture_size),\
             transform_img(img, 
                 dim=[config.environment.image_size, config.environment.image_size],
                 zero_screenshot=zero_screenshot_part, 
