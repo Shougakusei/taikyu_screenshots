@@ -6,13 +6,14 @@ environment :
     benchmark : dmc
     domain_name : hopper
     task_name : stand
-    seed : 0
+    seed : 1141
     visualize_reward : False
     from_pixels : True
     image_size : 64
     timestep_stride : 6
     timestep_max : 7668
     add_screen_count : 1
+    frame_skip : 2
 directories:
     root_folder : D:/fangames/I wanna be the Palladium ver1.0/Sadistic_Music_Factory/
     exe_folder : D:/fangames/I wanna be the Palladium ver1.0/
@@ -29,7 +30,6 @@ parameters :
         pad : 32
         aperture_size : 5 
         part_size : 100
-        
         
     dreamer :
         train_iterations : 10000
@@ -59,8 +59,7 @@ parameters :
         buffer :
             capacity : 50000
         
-        vae : 
-#             in_channels : 1
+        vae :
             num_hiddens : 64
             embedding_dim : 64
             embedding_image_size : 4
