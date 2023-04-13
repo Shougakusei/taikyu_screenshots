@@ -96,6 +96,16 @@ class Dreamer:
         self.writer = writer
         self.num_total_episode = 0
 
+    def encode(self, obs):
+        # Кодируем частичные и полные наблюдения соответствующими энкодерами, затем скрепляем
+        return torch.cat([self.encoder_full(obs[:,:,:self.config.in_channels,:,:]) self.encoder_part(obs[:,:,self.config.in_channels:,:,:])],-1)
+        
+    def decode(self, posteriors, determenistics):
+        # Кодируем соответствующее число наблюдений из наших posteriors и determenistics
+        reconstructed_observation_full = self.decoder_full(posteriors, determenistics)
+        reconstructed_observation_part = self.decoder_part(posteriors, determenistics)
+        return reconstructed_observation_full, reconstructed_observation_part
+        
     def load_buffer(self, buffer):
         
         # Загружаем буффер в алгоритм
@@ -148,8 +158,7 @@ class Dreamer:
         if self.verbose:
             print('data.observation.shape: ', data.observation.shape)
         
-        # Кодируем частичные и полные наблюдения соответствующими энкодерами, затем скрепляем
-        data.embedded_observation = torch.cat([self.encoder_full(data.observation[:,:,:self.config.in_channels,:,:]) self.encoder_part(data.observation[:,:,self.config.in_channels:,:,:])],-1)
+        data.embedded_observation = self.encode(data.observation)
         
         if self.verbose:
             print('data.embedded_observation.shape: ', data.embedded_observation.shape)
@@ -210,10 +219,7 @@ class Dreamer:
 #         reconstructed_observation_dist_part_2 = self.decoder_part(posterior_info.posteriors, posterior_info.deterministics)
 
 
-        reconstructed_observation_full_1 = self.decoder_full(posterior_info.posteriors, posterior_info.deterministics)
-#         reconstructed_observation_full_2 = self.decoder_full(posterior_info.posteriors, posterior_info.deterministics)
-        reconstructed_observation_part_1 = self.decoder_part(posterior_info.posteriors, posterior_info.deterministics)
-#         reconstructed_observation_part_2 = self.decoder_part(posterior_info.posteriors, posterior_info.deterministics)
+        reconstructed_observation_full, reconstructed_observation_part = self.decode(posterior_info.posteriors, posterior_info.deterministics)
 
         if inference_mode:
         
@@ -320,6 +326,132 @@ class Dreamer:
             )        
             
             print(reconstructed_observation_full_loss.detach().item(), reconstructed_observation_part_loss.detach().item(), self.config.kl_divergence_scale * kl_divergence_loss.detach().item())
+    
+    def behavior_learning(self, states, deterministics):
+        """
+        #TODO : last posterior truncation(last can be last step)
+        posterior shape : (batch, timestep, stochastic)
+        """
+        state = states.reshape(-1, self.config.stochastic_size)
+        deterministic = deterministics.reshape(-1, self.config.deterministic_size)
+
+        # continue_predictor reinit
+        for t in range(self.config.horizon_length):
+            action = self.actor(state, deterministic)
+            deterministic = self.rssm.recurrent_model(state, action, deterministic)
+            _, state = self.rssm.transition_model(deterministic)
+            self.behavior_learning_infos.append(
+                priors=state, deterministics=deterministic
+            )
+
+        self._agent_update(self.behavior_learning_infos.get_stacked())
+
+    def _agent_update(self, behavior_learning_infos):
+        predicted_rewards = self.reward_predictor(
+            behavior_learning_infos.priors, behavior_learning_infos.deterministics
+        ).mean
+        values = self.critic(
+            behavior_learning_infos.priors, behavior_learning_infos.deterministics
+        ).mean
+
+        if self.config.use_continue_flag:
+            continues = self.continue_predictor(
+                behavior_learning_infos.priors, behavior_learning_infos.deterministics
+            ).mean
+        else:
+            continues = self.config.discount * torch.ones_like(values)
+
+        lambda_values = compute_lambda_values(
+            predicted_rewards,
+            values,
+            continues,
+            self.config.horizon_length,
+            self.device,
+            self.config.lambda_,
+        )
+
+        actor_loss = -torch.mean(lambda_values)
+
+        self.actor_optimizer.zero_grad()
+        actor_loss.backward()
+        nn.utils.clip_grad_norm_(
+            self.actor.parameters(),
+            self.config.clip_grad,
+            norm_type=self.config.grad_norm_type,
+        )
+        self.actor_optimizer.step()
+
+        value_dist = self.critic(
+            behavior_learning_infos.priors.detach()[:, :-1],
+            behavior_learning_infos.deterministics.detach()[:, :-1],
+        )
+        value_loss = -torch.mean(value_dist.log_prob(lambda_values.detach()))
+
+        self.critic_optimizer.zero_grad()
+        value_loss.backward()
+        nn.utils.clip_grad_norm_(
+            self.critic.parameters(),
+            self.config.clip_grad,
+            norm_type=self.config.grad_norm_type,
+        )
+        self.critic_optimizer.step()
+    
+    @torch.no_grad()
+    def environment_interaction(self, env, num_interaction_episodes, train=True):
+        for epi in range(num_interaction_episodes):
+            posterior, deterministic = self.rssm.recurrent_model_input_init(1)
+            action = torch.zeros(1, self.action_size).to(self.device)
+
+            observation = env.reset()
+            embedded_observation = self.encode(
+                torch.from_numpy(observation).float().to(self.device)
+            )
+
+            score = 0
+            score_lst = np.array([])
+            done = False
+
+            while not done:
+                deterministic = self.rssm.recurrent_model(
+                    posterior, action, deterministic
+                )
+                embedded_observation = embedded_observation.reshape(1, -1)
+                _, posterior = self.rssm.representation_model(
+                    embedded_observation, deterministic
+                )
+                action = self.actor(posterior, deterministic).detach()
+
+                if self.discrete_action_bool:
+                    buffer_action = action.cpu().numpy()
+                    env_action = buffer_action.argmax()
+
+                else:
+                    buffer_action = action.cpu().numpy()[0]
+                    env_action = buffer_action
+
+                next_observation, reward, done, info = env.step(env_action)
+                if train:
+                    self.buffer.add(
+                        observation, buffer_action, reward, next_observation, done
+                    )
+                score += reward
+                embedded_observation = self.encode(
+                    torch.from_numpy(next_observation).float().to(self.device)
+                )
+                observation = next_observation
+                if done:
+                    if train:
+                        self.num_total_episode += 1
+                        self.writer.add_scalar(
+                            "training score", score, self.num_total_episode
+                        )
+                    else:
+                        score_lst = np.append(score_lst, score)
+                    break
+        if not train:
+            evaluate_score = score_lst.mean()
+            print("evaluate score : ", evaluate_score)
+            self.writer.add_scalar("test score", evaluate_score, self.num_total_episode)
             
     def save_params(self, folder_path):
                   
