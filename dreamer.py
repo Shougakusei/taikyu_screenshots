@@ -12,7 +12,6 @@ from actor import Actor
 from critic import Critic
 
 from dataset import EdgesDataset, get_seed_list
-from utils import load_config
 from torch.utils.data import DataLoader
 import torch
 import numpy as np
@@ -22,8 +21,7 @@ from loss import EdgeDetectionEntropyLoss
 from utils import (
     compute_lambda_values,
     create_normal_dist,
-    DynamicInfos,
-    pixel_normalization,
+    DynamicInfos
 )
 from buffer import ReplayBuffer
 
@@ -231,21 +229,21 @@ class Dreamer:
 
         if inference_mode == False:
             
-            reconstructed_observation_full_loss = self.loss_full(reconstructed_observation_full_1, pixel_normalization(data.observation[:, 1:, 0])) # +\
-#             self.loss_full(reconstructed_observation_full_2, pixel_normalization(data.observation[:, 1:, 1]))
+            reconstructed_observation_full_loss = self.loss_full(reconstructed_observation_full_1, data.observation[:, 1:, 0]) # +\
+#             self.loss_full(reconstructed_observation_full_2, data.observation[:, 1:, 1])
 
-            reconstructed_observation_part_loss = self.loss_part(reconstructed_observation_part_1, pixel_normalization(data.observation[:, 1:, 2])) #+\
-#             self.loss_part(reconstructed_observation_part_2, pixel_normalization(data.observation[:, 1:, 3]))
+            reconstructed_observation_part_loss = self.loss_part(reconstructed_observation_part_1, data.observation[:, 1:, 2]) #+\
+#             self.loss_part(reconstructed_observation_part_2, data.observation[:, 1:, 3])
             
             reconstructed_observation_loss = reconstructed_observation_full_loss + reconstructed_observation_part_loss
             
             
             
 #             reconstruction_observation_loss =\
-#             reconstructed_observation_dist_full_1.log_prob(pixel_normalization(data.observation[:, 1:, 0])) +\
-#             reconstructed_observation_dist_full_2.log_prob(pixel_normalization(data.observation[:, 1:, 1])) +\
-#             reconstructed_observation_dist_part_1.log_prob(pixel_normalization(data.observation[:, 1:, 2])) +\
-#             reconstructed_observation_dist_part_2.log_prob(pixel_normalization(data.observation[:, 1:, 3])) / 4 / 64 /64
+#             reconstructed_observation_dist_full_1.log_prob(data.observation[:, 1:, 0]) +\
+#             reconstructed_observation_dist_full_2.log_prob(data.observation[:, 1:, 1]) +\
+#             reconstructed_observation_dist_part_1.log_prob(data.observation[:, 1:, 2]) +\
+#             reconstructed_observation_dist_part_2.log_prob(data.observation[:, 1:, 3]) / 4 / 64 /64
 
             if self.verbose:
                 print('reconstructed_observation_loss: ', reconstructed_observation_loss.mean())

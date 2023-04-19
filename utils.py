@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import gym
+
 import yaml
 from attrdict import AttrDict
 
@@ -124,3 +126,17 @@ class DynamicInfos:
 
     def clear(self):
         self.data = {}
+        
+class PixelNormalization(gym.Wrapper):
+    def __init__(self, env):
+        super().__init__(env)
+
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+
+        return pixel_normalization(obs), reward, done, info
+
+    def reset(self):
+        obs = self.env.reset()
+
+        return pixel_normalization(obs)
