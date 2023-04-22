@@ -96,7 +96,7 @@ class Dreamer:
 
     def encode(self, obs):
         # Кодируем частичные и полные наблюдения соответствующими энкодерами, затем скрепляем
-        return torch.cat([self.encoder_full(obs[:,:,:self.config.in_channels,:,:]) self.encoder_part(obs[:,:,self.config.in_channels:,:,:])],-1)
+        return torch.cat([self.encoder_full(obs[:,:,:self.config.in_channels,:,:]), self.encoder_part(obs[:,:,self.config.in_channels:,:,:])],-1)
         
     def decode(self, posteriors, determenistics):
         # Кодируем соответствующее число наблюдений из наших posteriors и determenistics

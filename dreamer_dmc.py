@@ -14,7 +14,7 @@ from utils import (
     create_normal_dist,
     DynamicInfos,
 )
-from dreamer.utils.buffer import ReplayBuffer
+from buffer import ReplayBuffer
 
 
 class Dreamer:
@@ -117,6 +117,10 @@ class Dreamer:
             prior = posterior
 
         infos = self.dynamic_learning_infos.get_stacked()
+        
+        self.posteriors_debug, self.determenistics_debug = infos.posteriors, infos.deterministics
+        self.observations_debug = data.observation
+        
         self._model_update(data, infos)
         return infos.posteriors.detach(), infos.deterministics.detach()
 

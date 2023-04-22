@@ -27,12 +27,14 @@ def extract_metadata(fpath):
     with open(fpath, 'r') as file:
         info = file.read().rstrip()
         
-    info_splited = info.split('_')
+    info_splitted = info.split('_')
     
-    timestep = int(info_splited[0])
-    reward = float(info_splited[1])
-    player_x = float(info_splited[2])
-    player_y = float(info_splited[3])
+    timestep = int(info_splitted[0])
+    reward = float(info_splitted[1])
+    player_x = float(info_splitted[2])
+    player_y = float(info_splitted[3])
+    on_platform = bool(info_splitted[4]) 
+    djump = bool(info_splitted[5])
     
 #     movements = info_splited[4].split(';')[:-1]
     
@@ -59,7 +61,7 @@ def extract_metadata(fpath):
 #             jump_height += 1
 #             jump_true = 0
         
-    return timestep, reward, player_x, player_y, 0, 0
+    return timestep, reward, player_x, player_y, on_platform, djump
 
 def take_screen_part(img, player_x, player_y, width, height, pad):
     
@@ -144,7 +146,7 @@ def load_image_obs(image_path, zero_screenshot, zero_screenshot_part, config, mu
     
     # Путь к метаданным
     metadata_path = image_path_add[:-3] + 'txt'
-    timestep, reward, player_x, player_y, walk_distance, jump_height = extract_metadata(metadata_path)
+    timestep, reward, player_x, player_y, walk_distance, jump_height, on_platform, djump = extract_metadata(metadata_path)
     
     # Рассчитываем окончание эпизода
     if timestep < config.environment.timestep_max:
@@ -189,8 +191,10 @@ def load_image_obs(image_path, zero_screenshot, zero_screenshot_part, config, mu
         observation_img = np.stack([*imgs_full, *imgs_part])
 
     action = np.array([walk_distance, jump_height])
+    
+    info = {'on_platform':on_platform, 'djump':djump}
 
-    return observation_img, action, reward, terminal
+    return observation_img, action, reward, terminal, info
     
 # TODO измените загрузку изображений по образцу структуры выше 
 class EdgesDataset(datasets.ImageFolder):

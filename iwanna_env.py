@@ -34,14 +34,17 @@ def close_iwanna(process):
     except OSError:
         print('Процесс не существует')
     
-def actions_to_controls(walk_length, jump_height):
+def actions_to_controls(walk_length, jump_height, on_platform, djump):
     
     controls_array = np.zeros([6,4], dtype=np.int8)
     
     walk_length = round(walk_length)
     jump_height = round(jump_height)
     
-    jump_true = 0
+    if on_platform or djump:
+        jump_true = 0
+    else:
+        jump_true = 1
     
     for i in range(6):
         
@@ -165,10 +168,11 @@ class IwannaEnv(gym.Env):
         # Действия формата - (ходьба, где положительное значение - вправо, отрицательное - влево;
         #                     прыжок, где 0 - не прыгаем, 1 - прыгаем и отпускаем в первый же кадр,
         #                     ... 6 - прыгаем, и отпускаем на шестой кадр,
-        #                         7 - не отпускаем кнопку прыжка)
+        #                         7 - не отпускаем кнопку прыжка,
+        #                         8 - не отпускаем кнопку прыжка)
         #
         # При записи действий в txt идет округление до ближайшего десятичного знака
-        self.action_space = spaces.Box(low=np.array([-self.config.environment.timestep_stride, 0]), high=np.array([self.config.environment.timestep_stride, self.config.environment.timestep_stride + 1]), dtype=np.float32)
+        self.action_space = spaces.Box(low=np.array([-self.config.environment.timestep_stride, 0]), high=np.array([self.config.environment.timestep_stride, self.config.environment.timestep_stride + 2]), dtype=np.float32)
         
         self.exe_folder = self.config.directories.exe_folder
         self.exe = self.config.directories.exe
@@ -250,7 +254,7 @@ class IwannaEnv(gym.Env):
         wait_path_exists(img_path)
         wait_path_exists(add_img_path)
         
-        observation_img, _, _, _ = load_image_obs(img_path, self.zero_screenshot, self.zero_screenshot_part, self.config)
+        observation_img, _, _, _, _ = load_image_obs(img_path, self.zero_screenshot, self.zero_screenshot_part, self.config)
         
         return observation_img
     
@@ -260,7 +264,7 @@ class IwannaEnv(gym.Env):
         
         self.flg.raise_flg()
         
-        write_controls_txt(actions_to_controls(*action), self.episode_controls_folder + f'controls{self.timestep}.txt')
+        write_controls_txt(actions_to_controls(*action, self.on_platform, self.djump), self.episode_controls_folder + f'controls{self.timestep}.txt')
         
         self.flg.lower_flg()
         
@@ -270,10 +274,10 @@ class IwannaEnv(gym.Env):
         wait_path_exists(img_path)
         wait_path_exists(add_info_path)
         
-        observation_img, _, reward, terminal = load_image_obs(img_path, self.zero_screenshot, self.zero_screenshot_part, self.config)
+        observation_img, _, reward, terminal, info = load_image_obs(img_path, self.zero_screenshot, self.zero_screenshot_part, self.config)
         
-        # Формат словаря нужен для корректной обработки среды существующими алгоритмами
-        info = {}
+        self.on_platform = info['on_platform']
+        self.djump = info['djump']
         
         self.timestep += self.config.environment.timestep_stride
         
