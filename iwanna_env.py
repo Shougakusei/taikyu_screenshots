@@ -149,13 +149,16 @@ class PythonFlg():
             
 class IwannaEnv(gym.Env):
     
-    def __init__(self, config, seed=None, timeline_start=None, player_x_start=None, player_y_start=None):
+    def __init__(self, config, seed=None, timeline_start=None, player_x_start=None, player_y_start=None, round_reward = False, action_rescale = True):
         
         
         self.config = config
         self.flg = PythonFlg(self.config.directories.root_folder + 'Realtime/python_flg.txt')
         
         super(IwannaEnv, self).__init__()
+        
+        self.round_reward = round_reward
+        self.action_rescale = action_rescale
         
         # каналы изображения - [доп скрин N full, ..., доп скрин 0 full, основной скрин full,
         #                       доп скрин N part, ..., доп скрин 0 part, основной скрин part]
@@ -172,7 +175,13 @@ class IwannaEnv(gym.Env):
         #                         8 - не отпускаем кнопку прыжка)
         #
         # При записи действий в txt идет округление до ближайшего десятичного знака
-        self.action_space = spaces.Box(low=np.array([-self.config.environment.timestep_stride, 0]), high=np.array([self.config.environment.timestep_stride, self.config.environment.timestep_stride + 2]), dtype=np.float32)
+        self.action_low = np.array([-self.config.environment.timestep_stride, 0])
+        self.action_high = np.array([self.config.environment.timestep_stride, self.config.environment.timestep_stride + 2])
+        
+        if self.action_rescale:
+            self.action_space = spaces.Box(low=np.array([-1.0,-1.0]), high=np.array([1.0,1.0]), dtype=np.float32)
+        else:                        
+            self.action_space = spaces.Box(low=self.action_low, high=self.action_high, dtype=np.float32)
         
         self.exe_folder = self.config.directories.exe_folder
         self.exe = self.config.directories.exe
@@ -208,6 +217,9 @@ class IwannaEnv(gym.Env):
         
         self.process = None
         
+        self.on_platform = True
+        self.djump = True
+        
     
     def reset(self):
         '''Для корректного старта энвайромента после создания нужно сделать .reset()'''
@@ -242,7 +254,7 @@ class IwannaEnv(gym.Env):
             shutil.rmtree(self.episode_controls_folder)
         os.mkdir(self.episode_controls_folder)
         
-        write_controls_txt(actions_to_controls(0,0), self.episode_controls_folder + f'controls{0}.txt')
+        write_controls_txt(actions_to_controls(0,0, True, True), self.episode_controls_folder + f'controls{0}.txt')
         
         img_path = self.episode_screenshots_folder + f'{self.timestep}.png'
         add_img_path = self.episode_screenshots_add_folder + f'{self.timestep}.png'
@@ -254,17 +266,23 @@ class IwannaEnv(gym.Env):
         wait_path_exists(img_path)
         wait_path_exists(add_img_path)
         
-        observation_img, _, _, _, _ = load_image_obs(img_path, self.zero_screenshot, self.zero_screenshot_part, self.config)
+        observation_img, _, _, _ = load_image_obs(img_path, self.zero_screenshot, self.zero_screenshot_part, self.config)
         
         return observation_img
     
     def step(self, action):
         
-        print(action)
-        
         self.flg.raise_flg()
         
-        write_controls_txt(actions_to_controls(*action, self.on_platform, self.djump), self.episode_controls_folder + f'controls{self.timestep}.txt')
+        walk_length, jump_height = action
+                                    
+        if self.action_rescale:
+            walk_length *= self.action_high[0]
+            jump_height *= self.action_high[1]
+            if jump_height < 0:
+                jump_height = 0
+
+        write_controls_txt(actions_to_controls(walk_length, jump_height, self.on_platform, self.djump), self.episode_controls_folder + f'controls{self.timestep}.txt')
         
         self.flg.lower_flg()
         
@@ -274,12 +292,17 @@ class IwannaEnv(gym.Env):
         wait_path_exists(img_path)
         wait_path_exists(add_info_path)
         
-        observation_img, _, reward, terminal, info = load_image_obs(img_path, self.zero_screenshot, self.zero_screenshot_part, self.config)
+        observation_img, reward, terminal, info = load_image_obs(img_path, self.zero_screenshot, self.zero_screenshot_part, self.config)
+        
+        if self.round_reward:
+            reward = round(reward)
         
         self.on_platform = info['on_platform']
         self.djump = info['djump']
         
         self.timestep += self.config.environment.timestep_stride
+        
+        print(f'{round(walk_length,2), round(jump_height,2)} - {reward}')
         
         return observation_img, reward, terminal, info
     

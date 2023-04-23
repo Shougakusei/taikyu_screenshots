@@ -146,7 +146,7 @@ def load_image_obs(image_path, zero_screenshot, zero_screenshot_part, config, mu
     
     # Путь к метаданным
     metadata_path = image_path_add[:-3] + 'txt'
-    timestep, reward, player_x, player_y, walk_distance, jump_height, on_platform, djump = extract_metadata(metadata_path)
+    timestep, reward, player_x, player_y, on_platform, djump = extract_metadata(metadata_path)
     
     # Рассчитываем окончание эпизода
     if timestep < config.environment.timestep_max:
@@ -189,12 +189,10 @@ def load_image_obs(image_path, zero_screenshot, zero_screenshot_part, config, mu
                     for img in imgs]
 
         observation_img = np.stack([*imgs_full, *imgs_part])
-
-    action = np.array([walk_distance, jump_height])
     
     info = {'on_platform':on_platform, 'djump':djump}
 
-    return observation_img, action, reward, terminal, info
+    return observation_img, reward, terminal, info
     
 # TODO измените загрузку изображений по образцу структуры выше 
 class EdgesDataset(datasets.ImageFolder):
@@ -232,7 +230,7 @@ class EdgesDataset(datasets.ImageFolder):
         
         metadata_path = image_path_2[:-3] + 'txt'
         
-        timestep, reward, player_x, player_y, walk_distance, jump_height = extract_metadata(metadata_path)
+        timestep, reward, player_x, player_y, walk_distance, jump_height, on_platform, djump = extract_metadata(metadata_path)
         
         if timestep < config.environment.timestep_max:
             timestep_next = timestep + config.environment.timestep_stride
