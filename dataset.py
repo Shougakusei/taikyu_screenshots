@@ -146,7 +146,7 @@ def zero_screenshot_part_load(zero_screenshot_path, image_size, part_size, playe
 def get_seed_list(path):
     return list(map(lambda x: int(x[len('screenshots0000_'):]),os.listdir(path)))
 
-def load_image_obs(image_path, zero_screenshot, zero_screenshot_part, config, multiprocessing=False):
+def load_image_obs(image_path, zero_screenshot, zero_screenshot_part, config):
     
     # Добавляем в список пути к доп скриншотам начиная с самого раннего
     image_pathes= []
@@ -172,12 +172,12 @@ def load_image_obs(image_path, zero_screenshot, zero_screenshot_part, config, mu
         
     # флаг 0 = читаем черно-белое изображение
     
-    if multiprocessing:
+    if config.operation.multiprocessing:
         imgs = Parallel(n_jobs = (config.environment.add_screen_count + 1) * 2)(delayed(cv2.imread)(image_path, 0) for image_path in image_pathes)
     else:
         imgs = [cv2.imread(image_path, 0) for image_path in image_pathes]
     
-    if multiprocessing:
+    if config.operation.multiprocessing:
         
         if config.environment.full_screen_obs and config.environment.part_screen_obs:
             # Получаем параллельными вычислениями лист туплов вида (полный скрин, частичный скрин)

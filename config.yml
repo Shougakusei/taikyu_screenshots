@@ -2,6 +2,7 @@ operation :
     save : False
     log_dir : palladium-smf
     device : cuda:7
+    multiprocessing: 0
 environment :
     benchmark : dmc
     domain_name : hopper

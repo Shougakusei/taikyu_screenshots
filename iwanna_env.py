@@ -267,7 +267,7 @@ class IwannaEnv(gym.Env):
         wait_path_exists(img_path)
         wait_path_exists(add_img_path)
         
-        observation_img, _, _, _ = load_image_obs(img_path, self.zero_screenshot, self.zero_screenshot_part, self.config, multiprocessing=True)
+        observation_img, _, _, _ = load_image_obs(img_path, self.zero_screenshot, self.zero_screenshot_part, self.config)
         
         return observation_img
     
@@ -293,7 +293,7 @@ class IwannaEnv(gym.Env):
         wait_path_exists(img_path)
         wait_path_exists(add_info_path)
         
-        observation_img, reward, terminal, info = load_image_obs(img_path, self.zero_screenshot, self.zero_screenshot_part, self.config, multiprocessing=True)
+        observation_img, reward, terminal, info = load_image_obs(img_path, self.zero_screenshot, self.zero_screenshot_part, self.config)
         
         if self.round_reward:
             reward = round(reward)
