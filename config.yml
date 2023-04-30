@@ -12,8 +12,13 @@ environment :
     image_size : 64
     timestep_stride : 6
     timestep_max : 7668
-    add_screen_count : 1
+    add_screen_count : 2
     frame_skip : 2
+    # Читаем ли фуллскрин
+    full_screen_obs: 0
+    # Читаем ли партскрин
+    part_screen_obs: 1
+    
 directories:
     root_folder : D:/fangames/I wanna be the Palladium ver1.0/Sadistic_Music_Factory/
     exe_folder : D:/fangames/I wanna be the Palladium ver1.0/

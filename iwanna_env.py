@@ -163,7 +163,8 @@ class IwannaEnv(gym.Env):
         # каналы изображения - [доп скрин N full, ..., доп скрин 0 full, основной скрин full,
         #                       доп скрин N part, ..., доп скрин 0 part, основной скрин part]
         self.observation_space = spaces.Box(low=0, high=255,
-                                            shape=((self.config.environment.add_screen_count + 1) * 2, 
+                                            shape=((self.config.environment.add_screen_count + 1) * 
+                                                   (self.config.environment.full_screen_obs + self.config.environment.part_screen_obs), 
                                                    self.config.environment.image_size, 
                                                    self.config.environment.image_size), 
                                             dtype=np.uint8)
@@ -266,7 +267,7 @@ class IwannaEnv(gym.Env):
         wait_path_exists(img_path)
         wait_path_exists(add_img_path)
         
-        observation_img, _, _, _ = load_image_obs(img_path, self.zero_screenshot, self.zero_screenshot_part, self.config)
+        observation_img, _, _, _ = load_image_obs(img_path, self.zero_screenshot, self.zero_screenshot_part, self.config, multiprocessing=True)
         
         return observation_img
     
@@ -292,7 +293,7 @@ class IwannaEnv(gym.Env):
         wait_path_exists(img_path)
         wait_path_exists(add_info_path)
         
-        observation_img, reward, terminal, info = load_image_obs(img_path, self.zero_screenshot, self.zero_screenshot_part, self.config)
+        observation_img, reward, terminal, info = load_image_obs(img_path, self.zero_screenshot, self.zero_screenshot_part, self.config, multiprocessing=True)
         
         if self.round_reward:
             reward = round(reward)

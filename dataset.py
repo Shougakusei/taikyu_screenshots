@@ -102,18 +102,32 @@ def transform_img(img, dim, part_size=None, player_x=None, player_y=None, zero_s
     return img
 
 def transform_multiproc(img, zero_screenshot, zero_screenshot_part, config):
-    """Возвращает тупл вида (полный скриншот, частичный скриншот)"""
-    return transform_img(img, 
-               dim=[config.environment.image_size, config.environment.image_size], 
-               zero_screenshot=zero_screenshot, 
-               aperture_size=config.parameters.edges_dataset.aperture_size),\
-            transform_img(img, 
-                dim=[config.environment.image_size, config.environment.image_size],
-                zero_screenshot=zero_screenshot_part, 
-                part_size=config.parameters.edges_dataset.part_size,
-                player_x=config.parameters.edges_dataset.zero_screenshot_player_x,
-                player_y=config.parameters.edges_dataset.zero_screenshot_player_y,
-                aperture_size=config.parameters.edges_dataset.aperture_size)
+    """Возвращает тупл вида (полный скриншот, частичный скриншот), если нужны оба или просто отдельный скриншот"""
+    if config.environment.full_screen_obs and config.environment.part_screen_obs:
+        return transform_img(img, 
+                   dim=[config.environment.image_size, config.environment.image_size], 
+                   zero_screenshot=zero_screenshot, 
+                   aperture_size=config.parameters.edges_dataset.aperture_size),\
+                transform_img(img, 
+                    dim=[config.environment.image_size, config.environment.image_size],
+                    zero_screenshot=zero_screenshot_part, 
+                    part_size=config.parameters.edges_dataset.part_size,
+                    player_x=config.parameters.edges_dataset.zero_screenshot_player_x,
+                    player_y=config.parameters.edges_dataset.zero_screenshot_player_y,
+                    aperture_size=config.parameters.edges_dataset.aperture_size)
+    elif config.environment.full_screen_obs:
+        return transform_img(img, 
+                   dim=[config.environment.image_size, config.environment.image_size], 
+                   zero_screenshot=zero_screenshot, 
+                   aperture_size=config.parameters.edges_dataset.aperture_size)
+    elif config.environment.part_screen_obs:
+        return transform_img(img, 
+                    dim=[config.environment.image_size, config.environment.image_size],
+                    zero_screenshot=zero_screenshot_part, 
+                    part_size=config.parameters.edges_dataset.part_size,
+                    player_x=config.parameters.edges_dataset.zero_screenshot_player_x,
+                    player_y=config.parameters.edges_dataset.zero_screenshot_player_y,
+                    aperture_size=config.parameters.edges_dataset.aperture_size)
 
 def zero_screenshot_load(zero_screenshot_path, image_size, pad, aperture_size):
     '''Загружаем и трансформируем нулевой скриншот, приводим к формату наблюдения'''
@@ -164,34 +178,45 @@ def load_image_obs(image_path, zero_screenshot, zero_screenshot_part, config, mu
         imgs = [cv2.imread(image_path, 0) for image_path in image_pathes]
     
     if multiprocessing:
-        # Получаем параллельными вычислениями лист туплов вида (полный скрин, частичный скрин)
-        Parallel(n_jobs = (config.environment.add_screen_count + 1) * 2 )(delayed(transform_multiproc)(img, zero_screenshot, zero_screenshot_part, config) for img in imgs)
         
-        # Сливаем в одномерный лист
-        imgs = reduce(lambda x,y :x+y ,imgs)
+        if config.environment.full_screen_obs and config.environment.part_screen_obs:
+            # Получаем параллельными вычислениями лист туплов вида (полный скрин, частичный скрин)
+            observation_img = Parallel(n_jobs = (config.environment.add_screen_count + 1) * 2 )(delayed(transform_multiproc)(img, zero_screenshot, zero_screenshot_part, config) for img in imgs)
+            # Сливаем в одномерный лист
+            observation_img = reduce(lambda x,y :x+y ,imgs)
+        else:
+            # Получаем параллельными вычислениями лист скриншотов
+            observation_img = Parallel(n_jobs = (config.environment.add_screen_count + 1))(delayed(transform_multiproc)(img, zero_screenshot, zero_screenshot_part, config) for img in imgs)
         
     else:
         # Трансформируем и получаем готовые полные изображения
-        imgs_full = [transform_img(img, 
-                       dim=[config.environment.image_size, config.environment.image_size], 
-                       zero_screenshot=zero_screenshot, 
-                       aperture_size=config.parameters.edges_dataset.aperture_size)
-                    for img in imgs]
+        if config.environment.full_screen_obs:
+            imgs_full = [transform_img(img, 
+                           dim=[config.environment.image_size, config.environment.image_size], 
+                           zero_screenshot=zero_screenshot, 
+                           aperture_size=config.parameters.edges_dataset.aperture_size)
+                        for img in imgs]
 
         # Трансформируем и получаем частичные изображения
-        imgs_part = [transform_img(img, 
-                        dim=[config.environment.image_size, config.environment.image_size],
-                        zero_screenshot=zero_screenshot_part, 
-                        part_size=config.parameters.edges_dataset.part_size,
-                        player_x=config.parameters.edges_dataset.zero_screenshot_player_x,
-                        player_y=config.parameters.edges_dataset.zero_screenshot_player_y,
-                        aperture_size=config.parameters.edges_dataset.aperture_size)
-                    for img in imgs]
-
-        observation_img = np.stack([*imgs_full, *imgs_part])
+        if config.environment.part_screen_obs:
+            imgs_part = [transform_img(img, 
+                            dim=[config.environment.image_size, config.environment.image_size],
+                            zero_screenshot=zero_screenshot_part, 
+                            part_size=config.parameters.edges_dataset.part_size,
+                            player_x=config.parameters.edges_dataset.zero_screenshot_player_x,
+                            player_y=config.parameters.edges_dataset.zero_screenshot_player_y,
+                            aperture_size=config.parameters.edges_dataset.aperture_size)
+                        for img in imgs]
+            
+        if config.environment.full_screen_obs and config.environment.part_screen_obs:
+            observation_img = np.stack([*imgs_full, *imgs_part])
+        elif config.environment.full_screen_obs:
+            observation_img = np.stack([*imgs_full])
+        elif config.environment.part_screen_obs:
+            observation_img = np.stack([*imgs_part])
     
     info = {'on_platform':on_platform, 'djump':djump}
-
+    
     return observation_img, reward, terminal, info
     
 # TODO измените загрузку изображений по образцу структуры выше 
