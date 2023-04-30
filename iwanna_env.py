@@ -22,9 +22,15 @@ def wait_path_exists(path, sleep_time=0.25, peridos_to_wait=40):
         if time_counter > peridos_to_wait:
             break
             
-def start_iwanna(folder, exe):
+def start_iwanna(folder, exe, config):
     os.chdir(folder)
-    return subprocess.Popen([exe])
+    startup_info = None
+    if config.operation.minimized:
+        SW_MINIMIZE = 6
+        startup_info = subprocess.STARTUPINFO()
+        startup_info.dwFlags = subprocess.STARTF_USESHOWWINDOW
+        startup_info.wShowWindow = SW_MINIMIZE
+    return subprocess.Popen([exe], startupinfo=startup_info)
 
 def close_iwanna(process):
     try:
@@ -262,7 +268,7 @@ class IwannaEnv(gym.Env):
         
         self.flg.lower_flg()
         
-        self.process = start_iwanna(self.exe_folder, self.exe)
+        self.process = start_iwanna(self.exe_folder, self.exe, self.config)
     
         wait_path_exists(img_path)
         wait_path_exists(add_img_path)

@@ -3,6 +3,7 @@ operation :
     log_dir : palladium-smf
     device : cuda:7
     multiprocessing: 0
+    minimized: 1
 environment :
     benchmark : dmc
     domain_name : hopper
@@ -23,7 +24,7 @@ environment :
 directories:
     root_folder : D:/fangames/I wanna be the Palladium ver1.0/Sadistic_Music_Factory/
     exe_folder : D:/fangames/I wanna be the Palladium ver1.0/
-    exe : test.exe
+    exe : test_smf_rain.exe
 
 parameters :
 
